@@ -97,7 +97,10 @@ export interface ScanResult {
   faviconUrl?: string | null;
   baselineState?: "created" | "reused" | "provided" | "none";
   evidenceNotes?: string[];
-  /** Multi-signal defacement confidence — computed after evidence merge when visual exists. */
+  /**
+   * Multi-signal defacement confidence.
+   * Preliminary inside runScan (DOM/behavior only); persist/adhoc recompute after visual evidence.
+   */
   defacement?: DefacementScore;
   error?: string;
 }

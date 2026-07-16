@@ -12,6 +12,9 @@ import {
 } from "@/lib/scan/risk";
 import { collectScanEvidence } from "@/lib/scan/evidence";
 import { computeDefacementScore, newScriptOrigins } from "@/lib/scan/defacement-score";
+import { incidentTypeFromScan, shouldOpenIncident } from "@/lib/scan/incident-gate";
+
+export { shouldOpenIncident } from "@/lib/scan/incident-gate";
 
 const HTML_CAP = 500_000;
 
@@ -40,12 +43,6 @@ function severityForIncident(findings: ScanFinding[]): "CRITICAL" | "HIGH" | "ME
   if (findings.some((f) => f.risk === "high")) return "HIGH";
   if (findings.some((f) => f.risk === "medium")) return "MEDIUM";
   return "LOW";
-}
-
-function incidentType(findings: ScanFinding[]): string {
-  if (findings.some((f) => f.category === "DEFACEMENT")) return "DEFACEMENT";
-  if (findings.some((f) => f.risk === "critical")) return "CRITICAL FINDING";
-  return "POSTURE DEGRADED";
 }
 
 async function persistFindings(
@@ -106,11 +103,7 @@ async function maybeAlert(
     delivered,
   });
 
-  // Multi-signal defacement gate OR classic critical/high-drift thresholds.
-  const openIncident =
-    scan.defacement?.shouldIncident === true ||
-    critical.length > 0 ||
-    scan.driftPct >= 25;
+  const openIncident = shouldOpenIncident(scan);
   if (openIncident) {
     const { data: existing } = await admin
       .from("incidents")
@@ -123,7 +116,7 @@ async function maybeAlert(
         asset_id: assetId,
         scan_id: scanId,
         severity: severityForIncident(scan.findings),
-        type: incidentType(scan.findings),
+        type: incidentTypeFromScan(scan),
         status: "open",
         mttd_sec: Math.round(scan.elapsedMs / 1000),
       });

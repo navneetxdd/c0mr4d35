@@ -85,6 +85,16 @@ function buildPrompt(scan: ScanResult): string {
     .join("\n");
   const omitted = Math.max(0, scan.findings.length - top.length);
 
+  const visual =
+    scan.visualDriftPct == null ? "n/a" : `${scan.visualDriftPct}%`;
+  const deface = scan.defacement;
+  const defaceLine = deface
+    ? `Defacement confidence: ${deface.score}/100 (${deface.classification}, ${deface.layersFired} layers fired: ${deface.layers
+        .filter((l) => l.fired)
+        .map((l) => `${l.id}=${l.score}`)
+        .join(", ") || "none"})`
+    : "Defacement confidence: not computed";
+
   return [
     "You are a web security analyst. Assess this automated scan and return STRICT JSON only.",
     "",
@@ -93,6 +103,9 @@ function buildPrompt(scan: ScanResult): string {
     `Pages assessed: ${scan.pagesScanned} (of ${scan.discoveredLinks} discovered)`,
     `Detected stack: ${scan.techStack.length ? scan.techStack.join(", ") : "unknown"}`,
     `Content drift vs baseline: ${scan.driftPct}% (changed: ${scan.contentChanged})`,
+    `Visual pixel drift vs baseline: ${visual}`,
+    `Favicon changed: ${scan.faviconChanged === true ? "yes" : scan.faviconChanged === false ? "no" : "n/a"}`,
+    defaceLine,
     `Severity spread: ${JSON.stringify(scan.severityCounts)}`,
     `Posture score (0-100, higher is safer): ${scan.postureScore}`,
     "",
@@ -102,7 +115,7 @@ function buildPrompt(scan: ScanResult): string {
     "",
     "Return JSON with this exact shape:",
     `{"verdict":"BASELINE HELD|DRIFT DETECTED|DEFACEMENT|AT RISK","confidence":0.0-1.0,"summary":"one sentence","prioritizedRisks":[{"title":"...","why":"..."}],"recommendedActions":["..."]}`,
-    "Do not invent findings. Keep summary under 240 chars.",
+    "Do not invent findings. Weight multi-signal defacement confidence when present. Keep summary under 240 chars.",
   ]
     .filter(Boolean)
     .join("\n");

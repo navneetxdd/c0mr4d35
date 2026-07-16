@@ -194,13 +194,13 @@ async function executeAdhocScan(
     await onProgress?.({
       stage: "screenshot_diff",
       pct: 75,
-      message: "Capturing screenshot and requesting AI (in parallel)",
+      message: "Capturing screenshot and computing visual drift",
       artifact: null,
       at: new Date().toISOString(),
     });
 
-    // Overlap Chromium pack download with Gemini so AI isn't starved at the end.
-    const evidencePromise = collectScanEvidence({
+    // Evidence first, then AI — Gemini must see fused visual/favicon/defacement signals.
+    const evidence = await collectScanEvidence({
       admin,
       storageBasePath: `adhoc/${userId ?? "anon"}/${targetKeyFromUrl(data.target)}/${Date.now()}`,
       targetUrl: scan.target,
@@ -212,12 +212,6 @@ async function executeAdhocScan(
           }
         : null,
     });
-    const aiPromise = data.withAi
-      ? getAiVerdict(scan, secrets.geminiApiKey)
-      : Promise.resolve(undefined);
-
-    const [evidence, earlyVerdict] = await Promise.all([evidencePromise, aiPromise]);
-    verdict = earlyVerdict;
 
     const mergedFindings = dedupeFindings([...scan.findings, ...evidence.extraFindings]);
     scan.findings = mergedFindings;
@@ -251,8 +245,14 @@ async function executeAdhocScan(
       findings: scan.findings,
     });
 
-    // Re-run AI after evidence so vision-adjacent signals (favicon/visual) inform the prompt.
-    if (data.withAi && (!verdict || !verdict.available)) {
+    if (data.withAi) {
+      await onProgress?.({
+        stage: "persist_ai",
+        pct: 92,
+        message: "Requesting AI verdict with fused evidence",
+        artifact: null,
+        at: new Date().toISOString(),
+      });
       verdict = await getAiVerdict(scan, secrets.geminiApiKey);
     }
 

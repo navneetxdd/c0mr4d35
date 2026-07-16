@@ -141,7 +141,7 @@ For local auth callbacks, Supabase **Authentication → URL Configuration** shou
 ## AI & posture score
 
 - **Gemini** `gemini-2.5-flash` — prefer Settings BYOK; `GEMINI_API_KEY` is optional fallback  
-- No Gemini → engine findings still show, without an AI verdict  
+- No Gemini → engine findings still show; UI surfaces honest heuristic triage (not labeled as Gemini)  
 - **Posture** starts at **100**; severity penalties (critical −45, high −20, medium −10, low −4). Higher remaining = lighter findings, not uptime.
 
 ---
