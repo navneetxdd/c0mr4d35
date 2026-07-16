@@ -182,17 +182,23 @@ export async function resolveTarget(raw: string): Promise<ResolvedTarget> {
     throw new SsrfError("Target host is not permitted");
   }
 
-  // If the host is a literal IP, validate directly.
-  if (isIP(hostname)) {
-    if (!isPublicAddress(hostname)) {
+  // Literal IPs (and IPv6 forms Node's isIP may miss). Never DNS-lookup colon hosts.
+  const literalKind = isIP(hostname);
+  if (literalKind || hostname.includes(":")) {
+    const addr = hostname.replace(/^\[|\]$/g, "");
+    const embedded = embeddedIpv4FromIpv6(addr);
+    if (embedded && !isPublicIpv4(embedded)) {
       throw new SsrfError("Target resolves to a non-public address");
     }
-    return {
-      url,
-      hostname,
-      address: hostname,
-      family: isIP(hostname) === 6 ? 6 : 4,
-    };
+    if (literalKind && isPublicAddress(addr)) {
+      return {
+        url,
+        hostname,
+        address: addr,
+        family: literalKind === 6 ? 6 : 4,
+      };
+    }
+    throw new SsrfError("Target resolves to a non-public address");
   }
 
   let records: { address: string; family: number }[];
