@@ -45,12 +45,14 @@ inventory), so it is recomputed wherever a scan is displayed. Deliberately:
    detected **Next.js** → primary config `nextjs`; generated a real CSP; emitted
    all 5 platform configs with correct syntax; summary + notes present.
 
+## Visual verification (done)
+Enabled by a companion change (graceful degradation when Supabase is
+unconfigured, see `queries.ts`), the app was run locally and the panel was
+driven end-to-end: a live scan of `scan-bice.vercel.app` rendered the
+"06 · Auto-remediation" panel with the summary, Report-Only + Enforcing CSP
+blocks, the Next.js server config, and the rollout notes — polished and on-theme.
+
 ## Known limitations (honest)
-- The **React panel could not be rendered in this environment** because the
-  `/scan` page's server component (`fetchShellContext`) requires Supabase env,
-  which isn't set locally. The panel **compiles** and reuses the exact
-  design-system primitives (`panel`, `MonoEyebrow`, token classes) as the
-  already-verified sibling panels; it will render on the Supabase-backed deploy.
 - CSP `connect-src`/`img-src`/`style-src` are **conservative starters** (documented
   in-UI). The engine only sees script + form origins today; widening these is a
   future enhancement (capture connect/img origins during crawl) or is tuned via

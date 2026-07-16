@@ -41,6 +41,25 @@ function mapPosture(p: string | null | undefined): Asset["posture"] {
   return "secure";
 }
 
+/**
+ * Datum degrades gracefully when Supabase isn't configured (local dev, or a
+ * misconfigured deploy) instead of throwing a 500. Reads return safe empty
+ * defaults. Production always has Supabase set, so this path never runs there;
+ * middleware still fails closed in production regardless.
+ */
+function supabaseConfigured(): boolean {
+  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+}
+/** Only outside production may an unconfigured instance expose the console for local dev. */
+const DEV_UNAUTH = process.env.NODE_ENV !== "production";
+const EMPTY_TELEMETRY: Telemetry = {
+  assets: 0,
+  scans24h: 0,
+  openIncidents: 0,
+  mttdSec: null,
+  scanSuccessPct: null,
+};
+
 export function mapAssetRow(
   asset: DbAsset,
   latest: Scan | null,
@@ -70,6 +89,7 @@ export function mapAssetRow(
 }
 
 export async function fetchAssetsWithScans(): Promise<Asset[]> {
+  if (!supabaseConfigured()) return [];
   const supabase = await createServerSupabase();
   const admin = createAdminClient();
   const { data: assets } = await supabase.from("assets").select("*").order("created_at", { ascending: false });
@@ -139,6 +159,7 @@ export async function fetchAssetsWithScans(): Promise<Asset[]> {
 }
 
 export async function fetchTelemetry(): Promise<Telemetry> {
+  if (!supabaseConfigured()) return EMPTY_TELEMETRY;
   const supabase = await createServerSupabase();
   const since = new Date(Date.now() - 86_400_000).toISOString();
 
@@ -182,6 +203,7 @@ export async function fetchTelemetry(): Promise<Telemetry> {
 }
 
 export async function fetchFeedEvents(limit = 40): Promise<FeedEvent[]> {
+  if (!supabaseConfigured()) return [];
   const supabase = await createServerSupabase();
   const events: FeedEvent[] = [];
 
@@ -233,6 +255,7 @@ export interface AssetDetailData {
 }
 
 export async function fetchAssetDetail(id: string): Promise<AssetDetailData | null> {
+  if (!supabaseConfigured()) return null;
   const supabase = await createServerSupabase();
   const admin = createAdminClient();
   const { data: asset } = await supabase.from("assets").select("*").eq("id", id).single();
@@ -325,6 +348,7 @@ export async function fetchAssetDetail(id: string): Promise<AssetDetailData | nu
 }
 
 export async function fetchIncidents(): Promise<Incident[]> {
+  if (!supabaseConfigured()) return [];
   const supabase = await createServerSupabase();
   const { data } = await supabase
     .from("incidents")
@@ -349,6 +373,7 @@ export async function fetchIncidents(): Promise<Incident[]> {
 }
 
 export async function fetchMembers(): Promise<Member[]> {
+  if (!supabaseConfigured()) return [];
   const supabase = await createServerSupabase();
   const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: true });
   return (data ?? []).map((p) => ({
@@ -360,6 +385,7 @@ export async function fetchMembers(): Promise<Member[]> {
 }
 
 export async function fetchCurrentProfile(): Promise<Profile | null> {
+  if (!supabaseConfigured()) return null;
   const supabase = await createServerSupabase();
   const {
     data: { user },
@@ -370,6 +396,7 @@ export async function fetchCurrentProfile(): Promise<Profile | null> {
 }
 
 export async function fetchAuditLog(): Promise<AuditEntry[]> {
+  if (!supabaseConfigured()) return [];
   const supabase = await createServerSupabase();
   const { data } = await supabase.from("audit_log").select("*").order("seq", { ascending: false }).limit(100);
   const rows = (data ?? []) as DbAuditEntry[];
@@ -397,6 +424,18 @@ export function globalPostureFromAssets(assets: Asset[]): Posture {
 }
 
 export async function fetchShellContext(): Promise<ShellContext> {
+  if (!supabaseConfigured()) {
+    return {
+      posture: "secure",
+      watchCount: 0,
+      telemetry: EMPTY_TELEMETRY,
+      profile: null,
+      // Local dev without Supabase can drive the console; a real deploy always
+      // has Supabase set, and middleware fails closed in production regardless.
+      isAdmin: DEV_UNAUTH,
+      isAnalyst: DEV_UNAUTH,
+    };
+  }
   const [assets, telemetry, profile] = await Promise.all([
     fetchAssetsWithScans(),
     fetchTelemetry(),
