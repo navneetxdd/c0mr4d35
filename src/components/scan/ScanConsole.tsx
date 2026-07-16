@@ -1,0 +1,317 @@
+"use client";
+
+import { useState } from "react";
+import { AppShell } from "@/components/shell/AppShell";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { MonoEyebrow } from "@/components/ui/MonoEyebrow";
+import { RegistrationMarks } from "@/components/ui/RegistrationMarks";
+import { StatusPill } from "@/components/ui/StatusPill";
+import { StatusLed } from "@/components/ui/StatusLed";
+import { assets, globalPosture } from "@/lib/fixtures";
+import type { ScanApiResponse, SafeScanResult } from "@/lib/scan/api-types";
+import type { AiVerdict } from "@/lib/ai/gemini";
+import type { Risk } from "@/lib/scan/risk";
+import { cn } from "@/lib/format";
+
+type RunState =
+  | { phase: "idle" }
+  | { phase: "scanning" }
+  | { phase: "done"; scan: SafeScanResult; verdict?: AiVerdict }
+  | { phase: "error"; message: string };
+
+const riskTone: Record<Risk, "critical" | "watch" | "scan" | "secure" | "neutral"> = {
+  critical: "critical",
+  high: "critical",
+  medium: "watch",
+  low: "scan",
+  info: "neutral",
+};
+
+const CATEGORY_ORDER = ["DEFACEMENT", "HEADERS", "TLS", "EXPOSED PATHS", "CVE"] as const;
+
+export function ScanConsole() {
+  const [target, setTarget] = useState("");
+  const [state, setState] = useState<RunState>({ phase: "idle" });
+
+  const posture = globalPosture(assets);
+  const watchCount = assets.filter((a) => a.posture === "watch" || a.posture === "critical").length;
+
+  async function run() {
+    setState({ phase: "scanning" });
+    try {
+      const res = await fetch("/api/scan", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ target, withAi: true }),
+      });
+      const data = (await res.json()) as ScanApiResponse;
+      if (!data.ok) {
+        setState({ phase: "error", message: data.error });
+        return;
+      }
+      setState({ phase: "done", scan: data.scan, verdict: data.verdict });
+    } catch {
+      setState({ phase: "error", message: "Network error — could not reach the scanner." });
+    }
+  }
+
+  return (
+    <AppShell crumbs={[{ label: "COMMAND" }, { label: "LIVE SCAN" }]} posture={posture} watchCount={watchCount}>
+      <div className="mb-5">
+        <MonoEyebrow index="00">Assessment engine</MonoEyebrow>
+        <h1 className="mt-2 type-h1 text-text">Live scan</h1>
+        <p className="mt-2 max-w-2xl type-small text-text-dim">
+          Real assessment — SSRF-guarded fetch, content-drift defacement check, security-header
+          audit, TLS posture, exposed-path probes, and OSV stack-family correlation. AI verdict is
+          fail-open: findings stand even if enrichment is unavailable.
+        </p>
+      </div>
+
+      <section className="panel relative mb-4 p-4">
+        <RegistrationMarks />
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="flex-1">
+            <Input
+              label="Target URL"
+              placeholder="https://example.com"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              className="font-data"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && target.length > 3 && state.phase !== "scanning") run();
+              }}
+            />
+          </div>
+          <Button
+            onClick={run}
+            disabled={target.length < 4 || state.phase === "scanning"}
+            className="sm:w-40"
+          >
+            {state.phase === "scanning" ? "Scanning…" : "Run assessment"}
+          </Button>
+        </div>
+        <p className="mt-2 type-data-sm text-text-faint">
+          Public hosts only · private / loopback / metadata ranges are rejected before any request.
+        </p>
+      </section>
+
+      {state.phase === "scanning" ? <ScanningSkeleton /> : null}
+
+      {state.phase === "error" ? (
+        <div className="panel border-critical/50 p-4">
+          <p className="font-data text-[13px] text-critical">✗ {state.message}</p>
+        </div>
+      ) : null}
+
+      {state.phase === "done" ? <Results scan={state.scan} verdict={state.verdict} /> : null}
+    </AppShell>
+  );
+}
+
+function ScanningSkeleton() {
+  return (
+    <div className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
+      <div className="panel p-4">
+        <div className="skeleton h-6 w-40" />
+        <div className="mt-4 space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="skeleton h-10 w-full" />
+          ))}
+        </div>
+      </div>
+      <div className="panel p-4">
+        <div className="skeleton h-6 w-32" />
+        <div className="mt-4 skeleton h-24 w-full" />
+      </div>
+    </div>
+  );
+}
+
+function Results({ scan, verdict }: { scan: SafeScanResult; verdict?: AiVerdict }) {
+  const tone =
+    scan.posture === "critical" ? "critical" : scan.posture === "watch" ? "watch" : "secure";
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
+      <div className="flex flex-col gap-4">
+        <section className={cn("panel relative p-5", tone === "critical" && "glow-critical")}>
+          <RegistrationMarks />
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <MonoEyebrow index="01">Posture</MonoEyebrow>
+              <p
+                className={cn(
+                  "mt-2 type-h1",
+                  tone === "critical" ? "text-critical" : tone === "watch" ? "text-watch" : "text-secure",
+                )}
+              >
+                {scan.posture.toUpperCase()}
+              </p>
+              <p className="mt-1 font-data text-[12px] text-text-dim">{scan.finalHost}</p>
+            </div>
+            <div className="text-right">
+              <p className="type-data-lg text-text">{scan.postureScore}</p>
+              <p className="type-data-sm text-text-faint">SCORE / 100</p>
+            </div>
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Metric label="HTTP" value={String(scan.httpStatus)} />
+            <Metric label="DRIFT" value={`${scan.driftPct}%`} />
+            <Metric label="STACK" value={scan.fingerprint ?? "—"} />
+            <Metric label="ELAPSED" value={`${(scan.elapsedMs / 1000).toFixed(1)}s`} />
+          </div>
+          {scan.redirectedTo ? (
+            <p className="mt-3 type-data-sm text-text-faint">
+              REDIRECT · {scan.httpStatus} → {scan.redirectedTo}
+            </p>
+          ) : null}
+        </section>
+
+        <FindingsPanel scan={scan} />
+      </div>
+
+      <VerdictPanel verdict={verdict} />
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-sm border border-edge bg-void/40 px-3 py-2">
+      <p className="type-data-sm text-text-faint">{label}</p>
+      <p className="mt-0.5 truncate font-data text-[13px] text-text">{value}</p>
+    </div>
+  );
+}
+
+function FindingsPanel({ scan }: { scan: SafeScanResult }) {
+  return (
+    <section className="panel">
+      <div className="border-b border-edge px-4 py-3">
+        <MonoEyebrow index="02">Findings · {String(scan.findings.length).padStart(2, "0")}</MonoEyebrow>
+      </div>
+      {scan.findings.length === 0 ? (
+        <div className="px-4 py-8 text-center">
+          <p className="font-data text-[13px] text-secure">✓ No findings — clean posture</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-edge">
+          {CATEGORY_ORDER.map((cat) => {
+            const rows = scan.findings.filter((f) => f.category === cat);
+            if (!rows.length) return null;
+            return (
+              <div key={cat} className="px-4 py-3">
+                <p className="type-label mb-2">{cat}</p>
+                <ul className="space-y-2">
+                  {rows.map((f) => (
+                    <li key={f.id} className="rounded-sm border border-edge bg-void/40 px-3 py-2.5">
+                      <div className="flex items-start gap-2">
+                        <StatusPill tone={riskTone[f.risk]}>{f.risk.toUpperCase()}</StatusPill>
+                        <span className="min-w-0 flex-1 font-data text-[12px] text-text">{f.title}</span>
+                      </div>
+                      <p className="mt-1.5 type-small text-text-dim">{f.detail}</p>
+                      <p className="mt-1 type-data-sm text-text-faint">REMEDIATION · {f.remediation}</p>
+                      {f.reference ? (
+                        <a
+                          href={f.reference}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 inline-block font-data text-[11px] text-scan underline-offset-2 hover:underline"
+                        >
+                          {f.reference}
+                        </a>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function VerdictPanel({ verdict }: { verdict?: AiVerdict }) {
+  if (!verdict || !verdict.available) {
+    return (
+      <section className="panel relative p-4">
+        <RegistrationMarks />
+        <MonoEyebrow index="03">AI verdict</MonoEyebrow>
+        <p className="mt-4 font-data text-[12px] uppercase tracking-wider text-text-dim">
+          AI ENRICHMENT UNAVAILABLE
+        </p>
+        <p className="mt-2 type-small text-text-dim">
+          {verdict?.error ? `Reason: ${verdict.error}. ` : ""}
+          Findings on the left are authoritative — detection does not depend on the AI call.
+        </p>
+      </section>
+    );
+  }
+
+  const tone =
+    verdict.verdict === "DEFACEMENT" || verdict.verdict === "AT RISK"
+      ? "critical"
+      : verdict.verdict === "DRIFT DETECTED"
+        ? "watch"
+        : "secure";
+
+  return (
+    <section className="panel relative p-4">
+      <RegistrationMarks />
+      <MonoEyebrow index="03">AI verdict</MonoEyebrow>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <StatusPill tone={tone}>{verdict.verdict}</StatusPill>
+        <span className="font-data text-[11px] text-text-faint">GEMINI 2.5 FLASH</span>
+      </div>
+      <div className="mt-4">
+        <div className="flex items-center justify-between">
+          <span className="type-label">Confidence</span>
+          <span className="font-data text-[12px] text-text">{Math.round(verdict.confidence * 100)}%</span>
+        </div>
+        <div className="mt-1.5 h-1.5 overflow-hidden rounded-sm bg-void">
+          <div
+            className={cn(
+              "h-full rounded-sm",
+              tone === "critical" ? "bg-critical" : tone === "watch" ? "bg-watch" : "bg-secure",
+            )}
+            style={{ width: `${verdict.confidence * 100}%` }}
+          />
+        </div>
+      </div>
+      <p className="mt-4 type-small text-text-dim">{verdict.summary}</p>
+
+      {verdict.prioritizedRisks.length ? (
+        <div className="mt-4 border-t border-edge pt-3">
+          <p className="type-label mb-2">Prioritized risks</p>
+          <ul className="space-y-2">
+            {verdict.prioritizedRisks.map((r, i) => (
+              <li key={i} className="flex items-start gap-2">
+                <StatusLed posture="critical" />
+                <div>
+                  <p className="font-data text-[12px] text-text">{r.title}</p>
+                  <p className="type-data-sm text-text-faint">{r.why}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {verdict.recommendedActions.length ? (
+        <div className="mt-4 border-t border-edge pt-3">
+          <p className="type-label mb-2">Recommended actions</p>
+          <ul className="space-y-1.5">
+            {verdict.recommendedActions.map((a, i) => (
+              <li key={i} className="font-data text-[12px] text-text-dim">
+                → {a}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
+  );
+}
