@@ -8,7 +8,7 @@ import { MonoEyebrow } from "@/components/ui/MonoEyebrow";
 import { RegistrationMarks } from "@/components/ui/RegistrationMarks";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { StatusLed } from "@/components/ui/StatusLed";
-import { assets, globalPosture } from "@/lib/fixtures";
+import type { ShellContext } from "@/lib/data/shell";
 import type { ScanApiResponse, SafeScanResult } from "@/lib/scan/api-types";
 import type { AiVerdict } from "@/lib/ai/gemini";
 import type { Risk } from "@/lib/scan/risk";
@@ -42,12 +42,19 @@ const CATEGORY_ORDER = [
   "CVE",
 ] as const;
 
-export function ScanConsole() {
+interface ScanConsoleProps {
+  shell: ShellContext;
+  baselineHtml?: string | null;
+}
+
+export function ScanConsole({ shell, baselineHtml = null }: ScanConsoleProps) {
   const [target, setTarget] = useState("");
   const [state, setState] = useState<RunState>({ phase: "idle" });
 
-  const posture = globalPosture(assets);
-  const watchCount = assets.filter((a) => a.posture === "watch" || a.posture === "critical").length;
+  const adHocShell: ShellContext = {
+    ...shell,
+    posture: state.phase === "done" ? state.scan.posture : shell.posture,
+  };
 
   async function run() {
     setState({ phase: "scanning" });
@@ -55,7 +62,11 @@ export function ScanConsole() {
       const res = await fetch("/api/scan", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ target, withAi: true }),
+        body: JSON.stringify({
+          target,
+          withAi: true,
+          baselineHtml: baselineHtml || undefined,
+        }),
       });
       const data = (await res.json()) as ScanApiResponse;
       if (!data.ok) {
@@ -69,7 +80,7 @@ export function ScanConsole() {
   }
 
   return (
-    <AppShell crumbs={[{ label: "COMMAND" }, { label: "LIVE SCAN" }]} posture={posture} watchCount={watchCount}>
+    <AppShell crumbs={[{ label: "COMMAND" }, { label: "LIVE SCAN" }]} shell={adHocShell}>
       <div className="mb-5">
         <MonoEyebrow index="00">Assessment engine</MonoEyebrow>
         <h1 className="mt-2 type-h1 text-text">Live scan</h1>
@@ -98,7 +109,7 @@ export function ScanConsole() {
           </div>
           <Button
             onClick={run}
-            disabled={target.length < 4 || state.phase === "scanning"}
+            disabled={target.length < 4 || state.phase === "scanning" || !shell.isAnalyst}
             className="sm:w-40"
           >
             {state.phase === "scanning" ? "Scanning…" : "Run assessment"}
@@ -106,6 +117,7 @@ export function ScanConsole() {
         </div>
         <p className="mt-2 type-data-sm text-text-faint">
           Public hosts only · private / loopback / metadata ranges are rejected before any request.
+          {baselineHtml ? " · Baseline HTML attached for defacement detection." : ""}
         </p>
       </section>
 
@@ -171,7 +183,7 @@ function Results({ scan, verdict }: { scan: SafeScanResult; verdict?: AiVerdict 
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Metric label="HTTP" value={String(scan.httpStatus)} />
             <Metric label="DRIFT" value={`${scan.driftPct}%`} />
-            <Metric label="STACK" value={scan.fingerprint ?? "—"} />
+            <Metric label="PAGES" value={String(scan.pagesScanned ?? 1)} />
             <Metric label="ELAPSED" value={`${(scan.elapsedMs / 1000).toFixed(1)}s`} />
           </div>
           {scan.redirectedTo ? (

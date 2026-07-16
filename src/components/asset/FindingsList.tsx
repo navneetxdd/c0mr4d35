@@ -9,8 +9,14 @@ import { cn } from "@/lib/format";
 
 const GROUP_ORDER: FindingGroup[] = [
   "DEFACEMENT",
+  "BEHAVIOR",
   "HEADERS",
+  "COOKIES",
+  "CORS",
+  "CONTENT",
+  "METHODS",
   "TLS",
+  "DNS",
   "EXPOSED PATHS",
   "CVE",
 ];

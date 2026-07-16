@@ -1,22 +1,41 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { PostureChip } from "@/components/ui/PostureChip";
 import { useToast } from "@/components/ui/Toast";
-import { currentUser } from "@/lib/fixtures";
+import { signOutAction } from "@/app/actions/datum";
+import type { AppRole } from "@/lib/supabase/types";
 import { cn } from "@/lib/format";
 
 interface TopbarProps {
   crumbs: { label: string; href?: string }[];
-  posture: "secure" | "watch" | "critical";
+  posture: "secure" | "watch" | "critical" | "scanning";
   watchCount: number;
-  onScanAll?: () => void;
+  profile: { email: string; role: AppRole } | null;
+  isAnalyst: boolean;
+  onScanAll?: () => void | Promise<void>;
   className?: string;
 }
 
-export function Topbar({ crumbs, posture, watchCount, onScanAll, className }: TopbarProps) {
+export function Topbar({
+  crumbs,
+  posture,
+  watchCount,
+  profile,
+  isAnalyst,
+  onScanAll,
+  className,
+}: TopbarProps) {
   const { push } = useToast();
+  const router = useRouter();
+
+  async function handleSignOut() {
+    await signOutAction();
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <header
@@ -42,23 +61,34 @@ export function Topbar({ crumbs, posture, watchCount, onScanAll, className }: To
         </ol>
       </nav>
 
-      <PostureChip posture={posture} watchCount={watchCount} />
+      <PostureChip posture={posture === "scanning" ? "watch" : posture} watchCount={watchCount} />
 
-      <Button
-        variant="primary"
-        onClick={() => {
-          onScanAll?.();
-          push("SCAN ALL · 07 jobs enqueued");
-        }}
-      >
-        Scan all
-      </Button>
+      {isAnalyst ? (
+        <Button
+          variant="primary"
+          onClick={async () => {
+            if (onScanAll) {
+              await onScanAll();
+            }
+            push("SCAN ALL · jobs enqueued");
+          }}
+        >
+          Scan all
+        </Button>
+      ) : null}
 
       <div className="hidden sm:flex items-center gap-2 border-l border-edge pl-3">
-        <span className="font-data text-[11px] text-text-dim">{currentUser.email}</span>
+        <span className="font-data text-[11px] text-text-dim">{profile?.email ?? "—"}</span>
         <span className="rounded-sm border border-edge px-1.5 py-0.5 font-data text-[10px] uppercase tracking-wider text-text-faint">
-          {currentUser.role}
+          {profile?.role ?? "—"}
         </span>
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className="font-data text-[10px] uppercase tracking-wider text-text-faint hover:text-text-dim"
+        >
+          Sign out
+        </button>
       </div>
     </header>
   );

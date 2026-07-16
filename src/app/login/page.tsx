@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { RegistrationMarks } from "@/components/ui/RegistrationMarks";
-import { BUILD_HASH } from "@/lib/fixtures";
+import { BUILD_HASH } from "@/lib/build";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {

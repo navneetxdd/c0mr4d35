@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { runScan } from "@/lib/scan";
 import { getAiVerdict } from "@/lib/ai/gemini";
+import {
+  ForbiddenError,
+  UnauthorizedError,
+  requireRole,
+} from "@/lib/auth/require";
+import { checkRateLimit } from "@/lib/auth/rate-limit";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -20,12 +26,30 @@ const BodySchema = z.object({
   withAi: z.boolean().optional().default(true),
 });
 
-/**
- * On-demand scan endpoint. Validates input with Zod, runs the SSRF-guarded
- * engine, then enriches with the AI verdict (fail-open). Returns a stable
- * shape and never leaks stack traces — production error output is generic.
- */
 export async function POST(req: NextRequest) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    if (process.env.NODE_ENV === "production") {
+      return NextResponse.json({ ok: false, error: "Service unavailable" }, { status: 503 });
+    }
+  } else {
+    try {
+      const profile = await requireRole("analyst");
+      const adhocOk = await checkRateLimit(`scan:adhoc:${profile.id}`, 3, 60);
+      const userOk = await checkRateLimit(`scan:user:${profile.id}`, 10, 600);
+      if (!adhocOk || !userOk) {
+        return NextResponse.json({ ok: false, error: "Rate limit exceeded" }, { status: 429 });
+      }
+    } catch (e) {
+      if (e instanceof UnauthorizedError) {
+        return NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 });
+      }
+      if (e instanceof ForbiddenError) {
+        return NextResponse.json({ ok: false, error: "Insufficient permissions" }, { status: 403 });
+      }
+      throw e;
+    }
+  }
+
   let json: unknown;
   try {
     json = await req.json();
@@ -50,13 +74,10 @@ export async function POST(req: NextRequest) {
     });
 
     if (!scan.ok) {
-      // Validation/fetch failure is a client-visible, non-sensitive condition.
       return NextResponse.json({ ok: false, error: scan.error ?? "Scan failed" }, { status: 422 });
     }
 
     const verdict = parsed.data.withAi ? await getAiVerdict(scan) : undefined;
-
-    // Strip the raw HTML from the response payload (kept server-side only).
     const { html: _html, ...safe } = scan;
     void _html;
 

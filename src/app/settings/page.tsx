@@ -1,25 +1,27 @@
-"use client";
-
 import { AppShell } from "@/components/shell/AppShell";
 import { MonoEyebrow } from "@/components/ui/MonoEyebrow";
-import { assets, BUILD_HASH, globalPosture } from "@/lib/fixtures";
+import { BUILD_HASH } from "@/lib/build";
+import { fetchShellContext } from "@/lib/data/queries";
 
-export default function SettingsPage() {
-  const posture = globalPosture(assets);
-  const watchCount = assets.filter(
-    (a) => a.posture === "watch" || a.posture === "critical",
-  ).length;
+export default async function SettingsPage() {
+  const shell = await fetchShellContext();
+  const supabaseRef = process.env.NEXT_PUBLIC_SUPABASE_URL?.match(/https:\/\/([^.]+)/)?.[1] ?? "not set";
+  const gemini = Boolean(process.env.GEMINI_API_KEY);
+  const discord = Boolean(process.env.DISCORD_WEBHOOK_URL);
+  const cron = Boolean(process.env.CRON_SECRET);
 
   return (
-    <AppShell crumbs={[{ label: "SETTINGS" }]} posture={posture} watchCount={watchCount}>
+    <AppShell crumbs={[{ label: "SETTINGS" }]} shell={shell}>
       <MonoEyebrow index="16">Workspace</MonoEyebrow>
       <h1 className="mt-2 type-h1 text-text">Settings</h1>
       <div className="panel mt-6 divide-y divide-edge">
-        <Row label="Org" value="acme-ops" />
-        <Row label="Theme" value="DARK · NOC (locked)" />
-        <Row label="Worker" value="wrk-render-01 · sequential queue" />
+        <Row label="Supabase project" value={supabaseRef} />
+        <Row label="Default scan interval" value="15 min (per asset)" />
+        <Row label="Gemini BYOK" value={gemini ? "configured" : "not configured"} />
+        <Row label="Discord alerts" value={discord ? "configured" : "not configured"} />
+        <Row label="Cron scheduler" value={cron ? "configured" : "not configured"} />
         <Row label="Build" value={BUILD_HASH} />
-        <Row label="Alert channel" value="Discord webhook · configured" />
+        <Row label="Theme" value="DARK · NOC (locked)" />
       </div>
     </AppShell>
   );

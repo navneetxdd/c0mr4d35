@@ -57,12 +57,27 @@ export function AssetTile({ asset, index, large }: AssetTileProps) {
               large ? "h-16 w-28" : "h-10 w-16",
             )}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={asset.thumbnail}
-              alt=""
-              className="h-full w-full object-cover opacity-70 transition-opacity group-hover:opacity-95"
-            />
+            {asset.thumbnail ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={asset.thumbnail}
+                alt=""
+                className="h-full w-full object-cover opacity-70 transition-opacity group-hover:opacity-95"
+              />
+            ) : (
+              <div
+                className={cn(
+                  "flex h-full w-full items-center justify-center font-data text-[9px] uppercase tracking-wider",
+                  asset.posture === "critical"
+                    ? "text-critical/80"
+                    : asset.posture === "watch"
+                      ? "text-watch/80"
+                      : "text-secure/60",
+                )}
+              >
+                {asset.posture}
+              </div>
+            )}
             {asset.posture === "scanning" ? (
               <span
                 className="radar-sweep pointer-events-none absolute inset-[-40%] rounded-full border border-live/30 border-t-live/80"

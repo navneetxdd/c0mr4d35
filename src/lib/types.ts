@@ -5,12 +5,23 @@ export type Posture = "secure" | "watch" | "critical" | "scanning";
  * filed against us during the live game, not to security findings we surface.
  */
 export type RiskLevel = "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
-export type Role = "admin" | "viewer";
+export type Role = "admin" | "analyst" | "viewer";
 export type ScanTrigger = "CRON" | "MANUAL";
 export type ScanStatus = "queued" | "scanning" | "done" | "failed";
 export type DiffMode = "side-by-side" | "reveal" | "heatmap";
 export type IncidentStatus = "open" | "acknowledged" | "resolved";
-export type FindingGroup = "DEFACEMENT" | "HEADERS" | "TLS" | "EXPOSED PATHS" | "CVE";
+export type FindingGroup =
+  | "DEFACEMENT"
+  | "BEHAVIOR"
+  | "HEADERS"
+  | "COOKIES"
+  | "CORS"
+  | "CONTENT"
+  | "METHODS"
+  | "TLS"
+  | "DNS"
+  | "EXPOSED PATHS"
+  | "CVE";
 
 export interface Asset {
   id: string;

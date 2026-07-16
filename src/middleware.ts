@@ -22,10 +22,19 @@ function isPublic(pathname: string): boolean {
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
 
-  // If Supabase isn't configured yet, don't hard-fail the whole app.
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anon) return response;
+  const { pathname } = request.nextUrl;
+
+  if (!url || !anon) {
+    if (process.env.NODE_ENV === "production" && !isPublic(pathname)) {
+      const redirect = request.nextUrl.clone();
+      redirect.pathname = "/login";
+      redirect.searchParams.set("error", "config");
+      return NextResponse.redirect(redirect);
+    }
+    return response;
+  }
 
   const supabase = createServerClient(url, anon, {
     cookies: {
@@ -44,7 +53,6 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { pathname } = request.nextUrl;
   if (!user && !isPublic(pathname)) {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/login";

@@ -6,12 +6,12 @@ import { Input } from "@/components/ui/Input";
 import { MonoEyebrow } from "@/components/ui/MonoEyebrow";
 import { RegistrationMarks } from "@/components/ui/RegistrationMarks";
 import { StatusLed } from "@/components/ui/StatusLed";
-import type { Asset } from "@/lib/types";
+import { createAssetAndBaseline } from "@/app/actions/datum";
 
 interface AddAssetDrawerProps {
   open: boolean;
   onClose: () => void;
-  onCreated: (asset: Asset) => void;
+  onCreated: () => void;
 }
 
 type ResolveState =
@@ -57,6 +57,7 @@ export function AddAssetDrawer({ open, onClose, onCreated }: AddAssetDrawerProps
   const [interval, setIntervalMin] = useState("15");
   const [resolve, setResolve] = useState<ResolveState>({ kind: "idle" });
   const [phase, setPhase] = useState<"form" | "establishing" | "done">("form");
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -72,6 +73,7 @@ export function AddAssetDrawer({ open, onClose, onCreated }: AddAssetDrawerProps
       setIntervalMin("15");
       setPhase("form");
       setResolve({ kind: "idle" });
+      setError(null);
     }
   }, [open]);
 
@@ -115,7 +117,7 @@ export function AddAssetDrawer({ open, onClose, onCreated }: AddAssetDrawerProps
                 label="URL"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://status.acme-ops.io"
+                placeholder="https://example.com"
                 className="font-data"
                 hint={
                   resolve.kind === "ok" || resolve.kind === "blocked" || resolve.kind === "invalid"
@@ -127,7 +129,7 @@ export function AddAssetDrawer({ open, onClose, onCreated }: AddAssetDrawerProps
                 error={
                   resolve.kind === "blocked" || resolve.kind === "invalid"
                     ? resolve.detail
-                    : undefined
+                    : error ?? undefined
                 }
               />
               <Input
@@ -158,7 +160,7 @@ export function AddAssetDrawer({ open, onClose, onCreated }: AddAssetDrawerProps
                   : "DATUM LOCKED · first scan complete"}
               </p>
               <p className="type-data-sm text-text-dim">
-                Job enqueued → worker will capture and set the known-good reference.
+                Running live assessment and persisting baseline to Supabase.
               </p>
             </div>
           ) : null}
@@ -172,35 +174,21 @@ export function AddAssetDrawer({ open, onClose, onCreated }: AddAssetDrawerProps
             <Button
               className="flex-1"
               disabled={!canSubmit}
-              onClick={() => {
+              onClick={async () => {
                 setPhase("establishing");
-                window.setTimeout(() => {
-                  const host = (() => {
-                    try {
-                      return new URL(
-                        url.includes("://") ? url : `https://${url}`,
-                      ).hostname;
-                    } catch {
-                      return url;
-                    }
-                  })();
-                  const asset: Asset = {
-                    id: `a-${Date.now()}`,
-                    name: name.trim(),
-                    host,
-                    posture: "scanning",
-                    driftScore: 0,
-                    driftHistory: [0, 0, 0, 0, 0, 0],
-                    lastCheckAt: new Date().toISOString(),
-                    thumbnail: "/captures/status-current.svg",
-                    baselineCapture: "/captures/status-baseline.svg",
-                    currentCapture: "/captures/status-current.svg",
-                    openIncident: false,
-                    scanIntervalMin: Number(interval) || 15,
-                  };
-                  setPhase("done");
-                  onCreated(asset);
-                }, 1600);
+                setError(null);
+                const result = await createAssetAndBaseline({
+                  name: name.trim(),
+                  url,
+                  scanIntervalMin: Number(interval) || 15,
+                });
+                if (!result.ok) {
+                  setError(result.error);
+                  setPhase("form");
+                  return;
+                }
+                setPhase("done");
+                onCreated();
               }}
             >
               Establish
