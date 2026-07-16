@@ -38,9 +38,34 @@ export function guardedFetch(target: string, opts: GuardedFetchOptions): Promise
   const port = url.port ? Number(url.port) : isHttps ? 443 : 80;
   const path = `${url.pathname}${url.search}`;
 
+  const hardTimeout = opts.timeoutMs ?? DEFAULT_TIMEOUT;
+  const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
+
   return new Promise((resolve, reject) => {
     const transport = isHttps ? https : http;
-    const req = transport.request(
+    let settled = false;
+    let req: http.ClientRequest | undefined;
+
+    // Single settlement path. Crucially, the deadline calls done() DIRECTLY —
+    // it never waits for a socket 'error' event, which a tarpitting target can
+    // withhold indefinitely. The socket is torn down for cleanup, but the
+    // promise resolves/rejects regardless of whether Node emits an event.
+    const done = (err: Error | null, value?: FetchResult) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(killer);
+      try {
+        req?.destroy();
+      } catch {
+        // ignore
+      }
+      if (err) reject(err);
+      else resolve(value!);
+    };
+
+    const killer = setTimeout(() => done(new Error("Request deadline exceeded")), hardTimeout);
+
+    req = transport.request(
       {
         hostname: opts.pin.address,
         port,
@@ -50,6 +75,7 @@ export function guardedFetch(target: string, opts: GuardedFetchOptions): Promise
           host: opts.pin.hostname,
           "user-agent": USER_AGENT,
           accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          connection: "close",
           ...opts.headers,
         },
         // Pin connect to the validated IP — never re-resolve DNS.
@@ -57,7 +83,8 @@ export function guardedFetch(target: string, opts: GuardedFetchOptions): Promise
           cb(null, opts.pin.address, opts.pin.family);
         },
         servername: isHttps ? opts.pin.hostname : undefined,
-        timeout: opts.timeoutMs ?? DEFAULT_TIMEOUT,
+        agent: false, // no pooling — each probe is an isolated, disposable socket
+        timeout: hardTimeout,
       },
       (res) => {
         const headers: Record<string, string> = {};
@@ -65,7 +92,6 @@ export function guardedFetch(target: string, opts: GuardedFetchOptions): Promise
           if (value === undefined) continue;
           headers[key.toLowerCase()] = Array.isArray(value) ? value.join(", ") : String(value);
         }
-
         const location = headers["location"] ?? null;
         const status = res.statusCode ?? 0;
         const redirectedTo =
@@ -73,23 +99,8 @@ export function guardedFetch(target: string, opts: GuardedFetchOptions): Promise
 
         const chunks: Buffer[] = [];
         let received = 0;
-        const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
-
-        res.on("data", (chunk: Buffer) => {
-          if (received >= maxBytes) return;
-          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-          if (received + buf.byteLength > maxBytes) {
-            chunks.push(buf.subarray(0, maxBytes - received));
-            received = maxBytes;
-            res.destroy();
-            return;
-          }
-          chunks.push(buf);
-          received += buf.byteLength;
-        });
-
-        res.on("end", () => {
-          resolve({
+        const emit = () =>
+          done(null, {
             status,
             headers,
             body: Buffer.concat(chunks).toString("utf8"),
@@ -97,16 +108,32 @@ export function guardedFetch(target: string, opts: GuardedFetchOptions): Promise
             redirectedTo,
             elapsedMs: Date.now() - started,
           });
-        });
 
-        res.on("error", reject);
+        res.on("data", (chunk: Buffer) => {
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          if (received + buf.byteLength > maxBytes) {
+            chunks.push(buf.subarray(0, Math.max(0, maxBytes - received)));
+            received = maxBytes;
+            emit(); // enough — settle and tear down
+            return;
+          }
+          chunks.push(buf);
+          received += buf.byteLength;
+        });
+        res.on("end", emit);
+        res.on("close", emit);
+        res.on("aborted", () => done(new Error("Response aborted")));
+        res.on("error", (err) => done(err));
       },
     );
 
-    req.on("timeout", () => {
-      req.destroy(new Error("Request timed out"));
-    });
-    req.on("error", reject);
+    req.on("timeout", () => done(new Error("Request timed out")));
+    req.on("error", (err) => done(err));
+    try {
+      req.setNoDelay(true);
+    } catch {
+      // ignore
+    }
     req.end();
   });
 }

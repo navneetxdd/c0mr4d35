@@ -20,6 +20,7 @@ export function checkTls(hostname: string, port = 443, timeoutMs = 8000): Promis
     const done = (info: TlsInfo) => {
       if (settled) return;
       settled = true;
+      clearTimeout(killer);
       try {
         socket.destroy();
       } catch {
@@ -27,6 +28,11 @@ export function checkTls(hostname: string, port = 443, timeoutMs = 8000): Promis
       }
       resolve(info);
     };
+    // Hard deadline — covers connect/handshake stalls the socket timeout misses.
+    const killer = setTimeout(
+      () => done({ valid: false, daysToExpiry: null, issuer: null, subject: null, error: "TLS deadline exceeded" }),
+      timeoutMs + 500,
+    );
 
     const socket = tlsConnect(
       {
@@ -58,6 +64,67 @@ export function checkTls(hostname: string, port = 443, timeoutMs = 8000): Promis
     socket.on("error", (err) => done({ valid: false, daysToExpiry: null, issuer: null, subject: null, error: err.message }));
     socket.on("timeout", () => done({ valid: false, daysToExpiry: null, issuer: null, subject: null, error: "TLS handshake timed out" }));
   });
+}
+
+/**
+ * Attempts a handshake pinned to a specific legacy protocol version to detect
+ * whether the server still accepts it. Returns true if the deprecated protocol
+ * negotiates successfully.
+ */
+function acceptsProtocol(hostname: string, version: "TLSv1" | "TLSv1.1", port = 443, timeoutMs = 6000): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (v: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(killer);
+      try {
+        socket.destroy();
+      } catch {
+        // ignore
+      }
+      resolve(v);
+    };
+    const killer = setTimeout(() => done(false), timeoutMs + 500);
+    const socket = tlsConnect(
+      {
+        host: hostname,
+        port,
+        servername: hostname,
+        rejectUnauthorized: false,
+        minVersion: version,
+        maxVersion: version,
+        timeout: timeoutMs,
+      },
+      () => done(true),
+    );
+    socket.on("error", () => done(false));
+    socket.on("timeout", () => done(false));
+  });
+}
+
+export async function legacyTlsFindings(hostname: string): Promise<ScanFinding[]> {
+  const out: ScanFinding[] = [];
+  const [tls10, tls11] = await Promise.all([
+    acceptsProtocol(hostname, "TLSv1").catch(() => false),
+    acceptsProtocol(hostname, "TLSv1.1").catch(() => false),
+  ]);
+  const legacy: string[] = [];
+  if (tls10) legacy.push("TLS 1.0");
+  if (tls11) legacy.push("TLS 1.1");
+  if (legacy.length) {
+    out.push({
+      id: "tls-legacy-protocol",
+      category: "TLS",
+      risk: "medium",
+      title: `Deprecated TLS protocol enabled: ${legacy.join(", ")}`,
+      detail: `The server completed a handshake using ${legacy.join(" and ")}, which are deprecated and vulnerable to known downgrade/padding attacks.`,
+      remediation: "Disable TLS 1.0/1.1; require TLS 1.2 or higher.",
+      owasp: "A02:2021 Cryptographic Failures",
+      cwe: "CWE-327",
+    });
+  }
+  return out;
 }
 
 export function tlsFindings(info: TlsInfo): ScanFinding[] {

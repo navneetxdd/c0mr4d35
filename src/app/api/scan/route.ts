@@ -4,11 +4,19 @@ import { runScan } from "@/lib/scan";
 import { getAiVerdict } from "@/lib/ai/gemini";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 const BodySchema = z.object({
   target: z.string().min(4).max(2048),
   baselineHtml: z.string().max(3_000_000).optional().nullable(),
+  baselineBehavior: z
+    .object({
+      externalScriptOrigins: z.array(z.string()).max(200).optional(),
+      formActions: z.array(z.string()).max(200).optional(),
+    })
+    .optional()
+    .nullable(),
+  singlePage: z.boolean().optional().default(false),
   withAi: z.boolean().optional().default(true),
 });
 
@@ -37,6 +45,8 @@ export async function POST(req: NextRequest) {
     const scan = await runScan({
       target: parsed.data.target,
       baselineHtml: parsed.data.baselineHtml ?? null,
+      baselineBehavior: parsed.data.baselineBehavior ?? null,
+      singlePage: parsed.data.singlePage,
     });
 
     if (!scan.ok) {

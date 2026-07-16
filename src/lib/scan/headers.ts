@@ -53,11 +53,28 @@ const RULES: HeaderRule[] = [
     title: "Referrer-Policy missing",
     remediation: "Set Referrer-Policy: strict-origin-when-cross-origin.",
   },
+  {
+    header: "permissions-policy",
+    category: "HEADERS",
+    risk: "low",
+    title: "Permissions-Policy missing",
+    remediation: "Set a Permissions-Policy to restrict powerful features (camera, geolocation, etc.).",
+  },
 ];
 
-export function auditHeaders(headers: Record<string, string>): ScanFinding[] {
+const HEADER_CWE: Record<string, string> = {
+  "content-security-policy": "CWE-1021",
+  "strict-transport-security": "CWE-319",
+  "x-frame-options": "CWE-1021",
+  "x-content-type-options": "CWE-693",
+  "referrer-policy": "CWE-200",
+  "permissions-policy": "CWE-693",
+};
+
+export function auditHeaders(headers: Record<string, string>, pageUrl?: string): ScanFinding[] {
   const findings: ScanFinding[] = [];
   const cspPresent = Boolean(headers["content-security-policy"]);
+  const owasp = "A05:2021 Security Misconfiguration";
 
   for (const rule of RULES) {
     // frame-ancestors in CSP satisfies the X-Frame-Options rule.
@@ -78,6 +95,9 @@ export function auditHeaders(headers: Record<string, string>): ScanFinding[] {
         title: rule.title,
         detail: `Response did not include the ${rule.header} header.`,
         remediation: rule.remediation,
+        owasp,
+        cwe: HEADER_CWE[rule.header],
+        url: pageUrl,
       });
       continue;
     }
@@ -91,21 +111,27 @@ export function auditHeaders(headers: Record<string, string>): ScanFinding[] {
         detail: weakness,
         remediation: rule.remediation,
         evidence: `${rule.header}: ${value.slice(0, 180)}`,
+        owasp,
+        cwe: HEADER_CWE[rule.header],
+        url: pageUrl,
       });
     }
   }
 
   // Server/version disclosure is an info-level hygiene finding.
-  const disclosure = ["server", "x-powered-by"].filter((h) => headers[h]);
+  const disclosure = ["server", "x-powered-by"].filter((h) => headers[h] && /\d/.test(headers[h]!));
   for (const h of disclosure) {
     findings.push({
       id: `hdr-disclosure-${h}`,
       category: "HEADERS",
       risk: "info",
-      title: `Technology disclosure via ${h}`,
+      title: `Technology/version disclosure via ${h}`,
       detail: `Header reveals stack detail: ${headers[h]}`,
       remediation: `Suppress or genericize the ${h} header.`,
       evidence: `${h}: ${headers[h]}`,
+      owasp,
+      cwe: "CWE-200",
+      url: pageUrl,
     });
   }
 

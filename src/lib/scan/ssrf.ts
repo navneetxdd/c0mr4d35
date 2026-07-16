@@ -120,7 +120,10 @@ export async function resolveTarget(raw: string): Promise<ResolvedTarget> {
 
   let records: { address: string; family: number }[];
   try {
-    records = await dnsLookup(hostname, { all: true });
+    records = await Promise.race([
+      dnsLookup(hostname, { all: true }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error("dns-timeout")), 5000)),
+    ]);
   } catch {
     throw new SsrfError("Target host could not be resolved");
   }
