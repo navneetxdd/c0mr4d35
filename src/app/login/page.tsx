@@ -49,48 +49,50 @@ function AuthPage() {
         </span>
       </div>
 
-      {/* One centered stack: radar + brand + form share the same axis */}
-      <div className="relative z-20 mx-auto flex min-h-[100dvh] w-full max-w-[28rem] flex-col items-center justify-center px-4 py-16 sm:max-w-md">
-        <div
-          className="pointer-events-none absolute left-1/2 top-1/2 z-0 -translate-x-1/2 -translate-y-1/2 opacity-45 mix-blend-screen"
-          aria-hidden
-        >
-          <div className="radar-scope relative size-[min(92vw,28rem)] sm:size-[32rem]">
-            <div className="absolute inset-0 rounded-full border border-live/25" />
-            <div className="absolute inset-[12%] rounded-full border border-live/15" />
-            <div className="absolute inset-[28%] rounded-full border border-live/10" />
-            <div className="absolute inset-[44%] rounded-full border border-live/8" />
-            <div className="radar-crosshair absolute inset-0" />
-            <div className="radar-sweep-beam absolute inset-0 rounded-full" />
-            <div className="absolute left-1/2 top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-live/80 shadow-[0_0_12px_var(--live)]" />
+      {/* Viewport-centered stage — grid place-items is more reliable than mx-auto alone */}
+      <div className="relative z-20 grid min-h-[100dvh] w-full place-items-center px-4 py-16">
+        <div className="relative w-full max-w-md">
+          <div
+            className="pointer-events-none absolute left-1/2 top-1/2 z-0 size-[min(92vw,28rem)] -translate-x-1/2 -translate-y-1/2 opacity-45 mix-blend-screen sm:size-[32rem]"
+            aria-hidden
+          >
+            <div className="radar-scope relative h-full w-full">
+              <div className="absolute inset-0 rounded-full border border-live/25" />
+              <div className="absolute inset-[12%] rounded-full border border-live/15" />
+              <div className="absolute inset-[28%] rounded-full border border-live/10" />
+              <div className="absolute inset-[44%] rounded-full border border-live/8" />
+              <div className="radar-crosshair absolute inset-0" />
+              <div className="radar-sweep-beam absolute inset-0 rounded-full" />
+              <div className="absolute left-1/2 top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-live/80 shadow-[0_0_12px_var(--live)]" />
+            </div>
           </div>
-        </div>
 
-        <div className="relative z-10 flex w-full flex-col items-center">
-          <div className="mb-8 w-full select-none text-center sm:mb-10">
-            <h1
-              className="glitch-3d type-display mx-auto font-display text-[clamp(3rem,12vw,5.5rem)] font-bold uppercase tracking-tight text-live"
-              data-text="DATUM"
-            >
-              DATUM
-            </h1>
-            <p className="mx-auto mt-4 max-w-[22rem] text-balance font-data text-[13px] leading-relaxed text-live/55">
-              Establish the truth of a web asset, then watch for the moment it stops being true.
+          <div className="relative z-10 flex w-full flex-col items-center">
+            <div className="mb-8 w-full select-none text-center sm:mb-10">
+              <h1
+                className="glitch-3d type-display mx-auto font-display text-[clamp(3rem,12vw,5.5rem)] font-bold uppercase tracking-tight text-live"
+                data-text="DATUM"
+              >
+                DATUM
+              </h1>
+              <p className="mx-auto mt-4 max-w-[22rem] text-balance font-data text-[13px] leading-relaxed text-live/55">
+                Establish the truth of a web asset, then watch for the moment it stops being true.
+              </p>
+            </div>
+
+            <section className="relative w-full rounded-md border border-live/20 bg-carbon/90 px-6 py-9 shadow-[0_0_30px_rgba(184,240,76,0.1)] backdrop-blur-md sm:px-10 sm:py-10">
+              <RegistrationMarks />
+              {mode === "signin" ? (
+                <SignInForm onSwitch={() => setMode("signup")} />
+              ) : (
+                <SignUpForm onSwitch={() => setMode("signin")} />
+              )}
+            </section>
+
+            <p className="mt-5 text-center font-data text-[11px] tracking-wide text-live/40">
+              {">"} build {BUILD_HASH} · SECURE SESSION_
             </p>
           </div>
-
-          <section className="relative w-full rounded-md border border-live/20 bg-carbon/90 px-6 py-9 shadow-[0_0_30px_rgba(184,240,76,0.1)] backdrop-blur-md sm:px-10 sm:py-10">
-            <RegistrationMarks />
-            {mode === "signin" ? (
-              <SignInForm onSwitch={() => setMode("signup")} />
-            ) : (
-              <SignUpForm onSwitch={() => setMode("signin")} />
-            )}
-          </section>
-
-          <p className="mt-5 text-center font-data text-[11px] tracking-wide text-live/40">
-            {">"} build {BUILD_HASH} · SECURE SESSION_
-          </p>
         </div>
       </div>
     </div>
