@@ -42,6 +42,9 @@ const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_BUILD_HASH: BUILD_HASH,
   },
+  // Local `next dev` only — never injected into production/Vercel builds.
+  // Hides the bottom-left Next.js DevTools badge (not an app admin panel).
+  devIndicators: false,
   turbopack: {
     root: process.cwd(),
   },
