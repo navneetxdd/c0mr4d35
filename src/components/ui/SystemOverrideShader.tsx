@@ -10,18 +10,16 @@ const vertexShaderSource = `
 `;
 
 const fragmentShaderSource = `
-  precision highp float;
-  
+  precision mediump float;
+
   uniform vec2 u_resolution;
   uniform float u_time;
   uniform vec2 u_mouse;
-  
-  // Hash function for noise
+
   float hash(vec2 p) {
     return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453123);
   }
 
-  // Neon Green Base (Datum's --live color: #b8f04c / RGB: 184, 240, 76)
   vec3 getLiveColor() {
     return vec3(184.0 / 255.0, 240.0 / 255.0, 76.0 / 255.0);
   }
@@ -30,84 +28,49 @@ const fragmentShaderSource = `
     vec2 uv = gl_FragCoord.xy / u_resolution.xy;
     vec2 p = uv * 2.0 - 1.0;
     p.x *= u_resolution.x / u_resolution.y;
-    
-    // Normalized mouse position
+
     vec2 mouse = u_mouse / u_resolution.xy;
     mouse = mouse * 2.0 - 1.0;
     mouse.x *= u_resolution.x / u_resolution.y;
 
-    // 1. Dynamic Grid (dual-layered)
     vec2 gridUV = uv * 20.0;
-    vec2 gridUV2 = uv * 100.0;
-    
-    // Slight perspective/distortion for grid
     gridUV.y += sin(gridUV.x * 0.5 + u_time * 0.5) * 0.1;
-    
     float grid1 = max(step(0.98, fract(gridUV.x)), step(0.98, fract(gridUV.y)));
-    float grid2 = max(step(0.95, fract(gridUV2.x)), step(0.95, fract(gridUV2.y)));
-    
-    float gridAlpha = (grid1 * 0.3) + (grid2 * 0.08);
+    float grid2 = max(step(0.95, fract(uv * 80.0)), step(0.95, fract((uv * 80.0).yx)));
+    float gridAlpha = (grid1 * 0.3) + (grid2 * 0.06);
 
-    // 2. Glitchy Scanlines
-    float scanline = sin(uv.y * 800.0 + u_time * 10.0) * 0.04;
-    float heavyScanline = sin(uv.y * 50.0 - u_time * 2.0) * 0.1;
-    float scanAlpha = scanline + heavyScanline;
-
-    // 3. Procedural Data Pulses (Horizontal sweeps)
+    float scanAlpha = sin(uv.y * 400.0 + u_time * 8.0) * 0.03;
     float pulse = smoothstep(0.98, 1.0, sin(uv.y * 5.0 - u_time * 1.5));
-    pulse += smoothstep(0.99, 1.0, sin(uv.y * 15.0 + u_time * 3.0)) * 0.5;
 
-    // 4. Interactive Glow (Cursor vignette)
-    // Distance from current pixel to mouse
     float distToMouse = length(p - mouse);
-    float glow = 1.0 - smoothstep(0.0, 1.2, distToMouse);
-    // Add a pulsing effect to the glow
-    glow *= 0.8 + 0.2 * sin(u_time * 4.0);
-    
-    // Add a base vignette so edges are darker
-    float vignette = 1.0 - smoothstep(0.5, 1.5, length(p));
+    float glow = (1.0 - smoothstep(0.0, 1.2, distToMouse)) * (0.85 + 0.15 * sin(u_time * 3.0));
+    float vignette = 1.0 - smoothstep(0.5, 1.6, length(p));
 
-    // 5. Simulated Noise
-    float noise = hash(uv + u_time) * 0.08;
-
-    // Composite Colors
     vec3 baseColor = getLiveColor();
-    
-    // Start with grid and pulse
-    vec3 color = baseColor * (gridAlpha + pulse * 0.4);
-    
-    // Add interactive glow
-    color += baseColor * glow * 0.15;
-    
-    // Add vignette
+    vec3 color = baseColor * (gridAlpha + pulse * 0.35);
+    color += baseColor * glow * 0.12;
     color *= vignette;
-    
-    // Add scanlines and noise
     color -= scanAlpha;
-    color += noise;
-    
-    // Darken overall to act as a background
+    color += hash(uv + u_time) * 0.05;
     color *= 0.4;
-    
+
     gl_FragColor = vec4(color, 1.0);
   }
 `;
 
 function createShader(gl: WebGLRenderingContext, type: number, source: string) {
   const shader = gl.createShader(type);
-  if (!shader) throw new Error("Failed to create shader");
-  
+  if (!shader) return null;
   gl.shaderSource(shader, source);
   gl.compileShader(shader);
-  
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.error(gl.getShaderInfoLog(shader));
     gl.deleteShader(shader);
-    throw new Error("Shader compile failed");
+    return null;
   }
   return shader;
 }
 
+/** Login-only WebGL backdrop. Caps DPR, pauses when hidden / reduced-motion. */
 export function SystemOverrideShader() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -115,43 +78,35 @@ export function SystemOverrideShader() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const gl = canvas.getContext("webgl");
-    if (!gl) {
-      console.warn("WebGL not supported");
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       return;
     }
+
+    const gl = canvas.getContext("webgl", {
+      alpha: false,
+      antialias: false,
+      powerPreference: "low-power",
+    });
+    if (!gl) return;
 
     const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
     const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+    if (!vertexShader || !fragmentShader) return;
 
     const program = gl.createProgram();
     if (!program) return;
-    
     gl.attachShader(program, vertexShader);
     gl.attachShader(program, fragmentShader);
     gl.linkProgram(program);
-
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      console.error(gl.getProgramInfoLog(program));
-      return;
-    }
-
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return;
     gl.useProgram(program);
 
-    // Set up full-screen quad
     const positionBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     gl.bufferData(
       gl.ARRAY_BUFFER,
-      new Float32Array([
-        -1.0, -1.0,
-         1.0, -1.0,
-        -1.0,  1.0,
-        -1.0,  1.0,
-         1.0, -1.0,
-         1.0,  1.0,
-      ]),
-      gl.STATIC_DRAW
+      new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+      gl.STATIC_DRAW,
     );
 
     const positionLocation = gl.getAttribLocation(program, "position");
@@ -162,45 +117,60 @@ export function SystemOverrideShader() {
     const timeLocation = gl.getUniformLocation(program, "u_time");
     const mouseLocation = gl.getUniformLocation(program, "u_mouse");
 
-    let animationFrameId: number;
+    let animationFrameId = 0;
     let mouseX = window.innerWidth / 2;
     let mouseY = window.innerHeight / 2;
-    
-    // Smooth mouse interpolation
     let targetMouseX = mouseX;
     let targetMouseY = mouseY;
+    let running = true;
+    let lastFrame = 0;
+    const TARGET_MS = 1000 / 30;
 
     const handleMouseMove = (e: MouseEvent) => {
       targetMouseX = e.clientX;
-      targetMouseY = window.innerHeight - e.clientY; // Invert Y for WebGL
+      targetMouseY = window.innerHeight - e.clientY;
     };
 
-    window.addEventListener("mousemove", handleMouseMove);
-
     const resize = () => {
-      // Use devicePixelRatio for crisp rendering on retina displays
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = window.innerWidth * dpr;
-      canvas.height = window.innerHeight * dpr;
-      canvas.style.width = `${window.innerWidth}px`;
-      canvas.style.height = `${window.innerHeight}px`;
+      const dpr = Math.min(window.devicePixelRatio || 1, 1);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = Math.max(1, Math.floor(w * dpr));
+      canvas.height = Math.max(1, Math.floor(h * dpr));
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
       gl.viewport(0, 0, canvas.width, canvas.height);
     };
 
-    window.addEventListener("resize", resize);
+    const onVisibility = () => {
+      running = document.visibilityState === "visible";
+      if (running) {
+        lastFrame = 0;
+        animationFrameId = requestAnimationFrame(render);
+      }
+    };
+
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
+    window.addEventListener("resize", resize, { passive: true });
+    document.addEventListener("visibilitychange", onVisibility);
     resize();
 
     const startTime = performance.now();
 
     const render = (time: number) => {
-      // Lerp mouse
+      if (!running) return;
+      if (time - lastFrame < TARGET_MS) {
+        animationFrameId = requestAnimationFrame(render);
+        return;
+      }
+      lastFrame = time;
+
       mouseX += (targetMouseX - mouseX) * 0.1;
       mouseY += (targetMouseY - mouseY) * 0.1;
 
       gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
       gl.uniform1f(timeLocation, (time - startTime) * 0.001);
-      gl.uniform2f(mouseLocation, mouseX, mouseY);
-
+      gl.uniform2f(mouseLocation, mouseX * (canvas.width / window.innerWidth), mouseY * (canvas.height / window.innerHeight));
       gl.drawArrays(gl.TRIANGLES, 0, 6);
       animationFrameId = requestAnimationFrame(render);
     };
@@ -208,16 +178,19 @@ export function SystemOverrideShader() {
     animationFrameId = requestAnimationFrame(render);
 
     return () => {
+      running = false;
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener("resize", resize);
       window.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
 
   return (
     <canvas
       ref={canvasRef}
-      className="pointer-events-none fixed inset-0 z-0 h-full w-full opacity-60 mix-blend-screen"
+      className="pointer-events-none fixed inset-0 z-0 h-full w-full opacity-50 mix-blend-screen"
+      aria-hidden
     />
   );
 }

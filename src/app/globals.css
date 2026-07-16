@@ -226,6 +226,48 @@ body {
   animation: radar-sweep 1.2s linear infinite;
 }
 
+/* Login radar: circular scope + conic beam (not a rotating rectangle) */
+.radar-scope {
+  isolation: isolate;
+}
+
+.radar-crosshair::before,
+.radar-crosshair::after {
+  content: "";
+  position: absolute;
+  background: rgba(184, 240, 76, 0.12);
+}
+
+.radar-crosshair::before {
+  left: 50%;
+  top: 8%;
+  bottom: 8%;
+  width: 1px;
+  transform: translateX(-50%);
+}
+
+.radar-crosshair::after {
+  top: 50%;
+  left: 8%;
+  right: 8%;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.radar-sweep-beam {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 300deg,
+    rgba(184, 240, 76, 0.05) 320deg,
+    rgba(184, 240, 76, 0.22) 345deg,
+    rgba(184, 240, 76, 0.55) 360deg
+  );
+  animation: radar-sweep 3.5s linear infinite;
+  mask-image: radial-gradient(circle, #000 62%, transparent 72%);
+  -webkit-mask-image: radial-gradient(circle, #000 62%, transparent 72%);
+}
+
 @keyframes baseline-drift {
   0%,
   100% {
@@ -272,6 +314,7 @@ body {
   .slide-in,
   .led-critical,
   .radar-sweep,
+  .radar-sweep-beam,
   .baseline-drift,
   .skeleton {
     animation: none !important;

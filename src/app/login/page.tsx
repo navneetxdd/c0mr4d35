@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { Suspense, useActionState, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signInAction, signUpAction, type AuthActionState } from "@/app/actions/auth";
@@ -8,8 +9,12 @@ import { Input } from "@/components/ui/Input";
 import { RegistrationMarks } from "@/components/ui/RegistrationMarks";
 import { BUILD_HASH } from "@/lib/build";
 import { cn } from "@/lib/format";
-import { SystemOverrideShader } from "@/components/ui/SystemOverrideShader";
 import { TerminalLogs } from "@/components/ui/TerminalLogs";
+
+const SystemOverrideShader = dynamic(
+  () => import("@/components/ui/SystemOverrideShader").then((m) => m.SystemOverrideShader),
+  { ssr: false },
+);
 
 const INITIAL: AuthActionState = {
   ok: false,
@@ -31,70 +36,57 @@ function AuthPage() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
 
   return (
-    <div className="relative min-h-[100dvh] w-full overflow-hidden bg-void flex items-center justify-center bg-grid">
-
-      {/* Background WebGL Shader */}
+    <div className="relative flex min-h-[100dvh] w-full items-center justify-center overflow-hidden bg-void bg-grid">
       <SystemOverrideShader />
 
-      {/* Decorative Radar Sweep in background */}
-      <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 mix-blend-screen opacity-30">
-        <div className="h-[800px] w-[800px] rounded-full border border-live/20">
-          <div className="absolute inset-0 rounded-full border border-live/10 scale-75" />
-          <div className="absolute inset-0 rounded-full border border-live/5 scale-50" />
-          <div className="radar-sweep absolute inset-0 origin-center">
-            <div className="h-1/2 w-full bg-gradient-to-t from-live/20 to-transparent" />
-          </div>
+      {/* Proper circular radar (conic sweep — not a rotating rectangle) */}
+      <div
+        className="pointer-events-none absolute left-1/2 top-1/2 z-[1] -translate-x-1/2 -translate-y-1/2 opacity-40 mix-blend-screen"
+        aria-hidden
+      >
+        <div className="radar-scope relative h-[min(70vw,520px)] w-[min(70vw,520px)] sm:h-[640px] sm:w-[640px]">
+          <div className="absolute inset-0 rounded-full border border-live/25" />
+          <div className="absolute inset-[12%] rounded-full border border-live/15" />
+          <div className="absolute inset-[28%] rounded-full border border-live/10" />
+          <div className="absolute inset-[44%] rounded-full border border-live/8" />
+          <div className="radar-crosshair absolute inset-0" />
+          <div className="radar-sweep-beam absolute inset-0 rounded-full" />
+          <div className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-live/80 shadow-[0_0_12px_var(--live)]" />
         </div>
       </div>
 
-      {/* Left and Right Scrolling Terminal Logs */}
-      <TerminalLogs side="left" className="hidden lg:block z-10" />
-      <TerminalLogs side="right" className="hidden lg:block z-10" />
+      <TerminalLogs side="left" className="z-10 hidden lg:block" />
+      <TerminalLogs side="right" className="z-10 hidden lg:block" />
 
-      {/* Top Left Header */}
-      <div className="absolute top-6 left-6 z-20 flex items-center gap-2">
+      <div className="absolute left-6 top-6 z-20 flex items-center gap-2">
         <span className="animate-pulse font-data font-bold text-live">{"_>"}</span>
-        <span className="font-data text-[12px] uppercase tracking-[0.2em] text-live/80">SYSTEM_OVERRIDE</span>
+        <span className="font-data text-[12px] uppercase tracking-[0.2em] text-live/80">
+          SYSTEM_OVERRIDE
+        </span>
       </div>
 
-      {/* Top Right Header */}
-      <div className="absolute top-6 right-6 z-20 flex items-center gap-4 font-data text-[11px] uppercase tracking-wider text-critical/60">
-        <span>NULL</span>
-        <span>VOID</span>
-        <span className="text-critical">OFFLINE</span>
-      </div>
-
-      {/* Main Content Area */}
-      <div className="relative z-20 flex w-full flex-col items-center justify-center">
-
-        {/* Giant Glitch Text */}
-        <div className="mb-12 text-center select-none">
-          <p className="mb-4 font-data text-[12px] uppercase tracking-[0.4em] text-text-faint">
-            FICTIONAL SIMULATION // COSMETIC STATE ONLY
-          </p>
+      <div className="relative z-20 flex w-full flex-col items-center justify-center px-4">
+        <div className="mb-10 select-none text-center sm:mb-12">
           <h1
-            className="glitch-3d type-display font-display font-bold uppercase tracking-tight text-live text-6xl sm:text-8xl lg:text-[140px]"
+            className="glitch-3d type-display font-display text-6xl font-bold uppercase tracking-tight text-live sm:text-8xl lg:text-[120px]"
             data-text="DATUM"
           >
             DATUM
           </h1>
-          <p className="mt-8 max-w-xl mx-auto font-data text-[13px] text-live/60 crt-flicker">
-            This is a generic placeholder defacement copy. No system was accessed, no
-            vulnerability was used, and no real person or organization is involved.
+          <p className="mx-auto mt-5 max-w-md font-data text-[13px] leading-relaxed text-live/55">
+            Establish the truth of a web asset, then watch for the moment it stops being true.
           </p>
         </div>
 
-        {/* Authentication Panel */}
-        <div className="w-full max-w-md px-6">
-          <section className="relative flex items-center bg-carbon/80 backdrop-blur-md px-6 py-10 sm:px-12 border border-live/20 rounded-md shadow-[0_0_30px_rgba(184,240,76,0.1)]">
+        <div className="w-full max-w-md px-2 sm:px-6">
+          <section className="relative flex items-center rounded-md border border-live/20 bg-carbon/85 px-6 py-10 shadow-[0_0_30px_rgba(184,240,76,0.1)] backdrop-blur-md sm:px-12">
             <RegistrationMarks />
             {mode === "signin" ? (
               <SignInForm onSwitch={() => setMode("signup")} />
             ) : (
               <SignUpForm onSwitch={() => setMode("signin")} />
             )}
-
-            <p className="absolute bottom-[-40px] left-0 font-data text-[11px] text-live/40">
+            <p className="absolute bottom-[-36px] left-0 font-data text-[11px] text-live/40">
               {">"} build {BUILD_HASH} · SECURE SESSION_
             </p>
           </section>
@@ -139,16 +131,42 @@ function SignInForm({ onSwitch }: { onSwitch: () => void }) {
       {state.error ? <AuthBanner tone="critical">{state.error}</AuthBanner> : null}
       {state.message ? <AuthBanner tone="secure">{state.message}</AuthBanner> : null}
 
-      <Input label="Email" name="email" type="email" autoComplete="email" required maxLength={254} disabled={pending} />
-      <Input label="Password" name="password" type="password" autoComplete="current-password" required minLength={1} maxLength={128} disabled={pending} />
+      <Input
+        label="Email"
+        name="email"
+        type="email"
+        autoComplete="email"
+        required
+        maxLength={254}
+        disabled={pending}
+      />
+      <Input
+        label="Password"
+        name="password"
+        type="password"
+        autoComplete="current-password"
+        required
+        minLength={1}
+        maxLength={128}
+        disabled={pending}
+      />
 
-      <Button type="submit" className="w-full !border-live !text-live hover:!bg-live/10" variant="secondary" disabled={pending}>
+      <Button
+        type="submit"
+        className="w-full !border-live !text-live hover:!bg-live/10"
+        variant="secondary"
+        disabled={pending}
+      >
         {pending ? "Authenticating…" : "Authenticate"}
       </Button>
 
-      <p className="type-small text-text-dim text-center">
+      <p className="type-small text-center text-text-dim">
         No clearance?{" "}
-        <button type="button" onClick={onSwitch} className="font-data text-[12px] text-live underline-offset-2 hover:underline">
+        <button
+          type="button"
+          onClick={onSwitch}
+          className="font-data text-[12px] text-live underline-offset-2 hover:underline"
+        >
           Request access
         </button>
       </p>
@@ -179,17 +197,53 @@ function SignUpForm({ onSwitch }: { onSwitch: () => void }) {
       {state.error ? <AuthBanner tone="critical">{state.error}</AuthBanner> : null}
       {state.message ? <AuthBanner tone="secure">{state.message}</AuthBanner> : null}
 
-      <Input label="Email" name="email" type="email" autoComplete="email" required maxLength={254} disabled={pending} />
-      <Input label="Password" name="password" type="password" autoComplete="new-password" required minLength={12} maxLength={128} disabled={pending} hint="At least 12 characters with upper, lower, number, and symbol." />
-      <Input label="Confirm password" name="confirmPassword" type="password" autoComplete="new-password" required minLength={12} maxLength={128} disabled={pending} />
+      <Input
+        label="Email"
+        name="email"
+        type="email"
+        autoComplete="email"
+        required
+        maxLength={254}
+        disabled={pending}
+      />
+      <Input
+        label="Password"
+        name="password"
+        type="password"
+        autoComplete="new-password"
+        required
+        minLength={12}
+        maxLength={128}
+        disabled={pending}
+        hint="At least 12 characters with upper, lower, number, and symbol."
+      />
+      <Input
+        label="Confirm password"
+        name="confirmPassword"
+        type="password"
+        autoComplete="new-password"
+        required
+        minLength={12}
+        maxLength={128}
+        disabled={pending}
+      />
 
-      <Button type="submit" className="w-full !border-live !text-live hover:!bg-live/10" variant="secondary" disabled={pending}>
+      <Button
+        type="submit"
+        className="w-full !border-live !text-live hover:!bg-live/10"
+        variant="secondary"
+        disabled={pending}
+      >
         {pending ? "Creating account…" : "Submit request"}
       </Button>
 
-      <p className="type-small text-text-dim text-center">
+      <p className="type-small text-center text-text-dim">
         Already registered?{" "}
-        <button type="button" onClick={onSwitch} className="font-data text-[12px] text-live underline-offset-2 hover:underline">
+        <button
+          type="button"
+          onClick={onSwitch}
+          className="font-data text-[12px] text-live underline-offset-2 hover:underline"
+        >
           Sign in
         </button>
       </p>
