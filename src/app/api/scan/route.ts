@@ -208,16 +208,19 @@ async function executeAdhocScan(
   }
 
   let evidenceNotes = scan.evidenceNotes ?? [];
+  let verdict: Awaited<ReturnType<typeof getAiVerdict>> | undefined;
+
   if (admin) {
     await onProgress?.({
       stage: "screenshot_diff",
       pct: 75,
-      message: "Capturing screenshot and computing visual evidence",
+      message: "Capturing screenshot and requesting AI (in parallel)",
       artifact: null,
       at: new Date().toISOString(),
     });
 
-    const evidence = await collectScanEvidence({
+    // Overlap Chromium pack download with Gemini so AI isn't starved at the end.
+    const evidencePromise = collectScanEvidence({
       admin,
       storageBasePath: `adhoc/${userId ?? "anon"}/${targetKeyFromUrl(data.target)}/${Date.now()}`,
       targetUrl: scan.target,
@@ -229,6 +232,12 @@ async function executeAdhocScan(
           }
         : null,
     });
+    const aiPromise = data.withAi
+      ? getAiVerdict(scan, secrets.geminiApiKey)
+      : Promise.resolve(undefined);
+
+    const [evidence, earlyVerdict] = await Promise.all([evidencePromise, aiPromise]);
+    verdict = earlyVerdict;
 
     const mergedFindings = dedupeFindings([...scan.findings, ...evidence.extraFindings]);
     scan.findings = mergedFindings;
@@ -270,19 +279,20 @@ async function executeAdhocScan(
       artifact: null,
       at: new Date().toISOString(),
     });
+    if (data.withAi) {
+      await onProgress?.({
+        stage: "persist_ai",
+        pct: 98,
+        message: "Requesting AI verdict",
+        artifact: null,
+        at: new Date().toISOString(),
+      });
+      verdict = await getAiVerdict(scan, secrets.geminiApiKey);
+    }
   }
 
   scan.evidenceNotes = evidenceNotes;
 
-  await onProgress?.({
-    stage: "persist_ai",
-    pct: 98,
-    message: data.withAi ? "Requesting AI verdict" : "Skipping AI verdict",
-    artifact: null,
-    at: new Date().toISOString(),
-  });
-
-  const verdict = data.withAi ? await getAiVerdict(scan, secrets.geminiApiKey) : undefined;
   const { html: _html, ...safe } = scan;
   void _html;
 

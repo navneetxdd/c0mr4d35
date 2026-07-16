@@ -1,9 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createServerSupabase } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth/require";
-import { getByokStatus, sanitizeApiKey, type ByokKeyStatus } from "@/lib/auth/byok";
+import {
+  getByokStatus,
+  persistMySealedKey,
+  sanitizeApiKey,
+  type ByokKeyStatus,
+} from "@/lib/auth/byok";
+import { KEY_MASK_SENTINEL } from "@/lib/auth/byok-shared";
 
 export type ByokActionState = {
   ok: boolean;
@@ -12,56 +17,125 @@ export type ByokActionState = {
   status: ByokKeyStatus | null;
 };
 
-export async function saveByokKeysAction(
+const empty: ByokActionState = {
+  ok: false,
+  error: null,
+  message: null,
+  status: null,
+};
+
+function isMaskOrEmpty(raw: string): boolean {
+  const v = raw.trim();
+  return !v || v === KEY_MASK_SENTINEL;
+}
+
+export async function saveGeminiKeyAction(
   _prev: ByokActionState,
   formData: FormData,
 ): Promise<ByokActionState> {
   try {
     await requireUser();
   } catch {
-    return { ok: false, error: "Authentication required", message: null, status: null };
+    return { ...empty, error: "Authentication required" };
   }
 
-  const gemini = sanitizeApiKey(String(formData.get("geminiApiKey") ?? ""));
-  const shodan = sanitizeApiKey(String(formData.get("shodanApiKey") ?? ""));
-  const clearGemini = formData.get("clearGemini") === "on";
-  const clearShodan = formData.get("clearShodan") === "on";
+  const clear = formData.get("clearGemini") === "on";
+  const raw = String(formData.get("geminiApiKey") ?? "");
+  const gemini = sanitizeApiKey(raw);
 
-  if (gemini && gemini.length > 200) {
-    return { ok: false, error: "Gemini key is too long", message: null, status: null };
-  }
-  if (shodan && shodan.length > 200) {
-    return { ok: false, error: "Shodan key is too long", message: null, status: null };
-  }
-
-  const supabase = await createServerSupabase();
-  const { data, error } = await supabase.rpc("set_my_api_keys", {
-    p_gemini: gemini || null,
-    p_shodan: shodan || null,
-    p_clear_gemini: clearGemini,
-    p_clear_shodan: clearShodan,
-  });
-
-  if (error) {
+  if (!clear && isMaskOrEmpty(raw)) {
+    const status = await getByokStatus();
     return {
-      ok: false,
-      error: "Could not save API keys. Ensure migrations are applied.",
-      message: null,
-      status: null,
+      ok: true,
+      error: null,
+      message: status.geminiConfigured ? "Gemini key unchanged." : "Paste a Gemini key to save.",
+      status,
     };
   }
 
+  if (!clear && (gemini.length < 20 || gemini.length > 200)) {
+    return { ...empty, error: "Gemini key length looks invalid.", status: await getByokStatus() };
+  }
+
+  const result = await persistMySealedKey({
+    gemini: clear ? null : gemini,
+    clearGemini: clear,
+  });
+
   revalidatePath("/settings");
-  const status = await getByokStatus();
-  const row = (data ?? {}) as { geminiConfigured?: boolean; shodanConfigured?: boolean };
+  if (!result.ok) {
+    return { ...empty, error: result.error, status: await getByokStatus() };
+  }
   return {
     ok: true,
     error: null,
-    message: "API keys updated.",
-    status: {
-      geminiConfigured: Boolean(row.geminiConfigured ?? status.geminiConfigured),
-      shodanConfigured: Boolean(row.shodanConfigured ?? status.shodanConfigured),
-      geminiEnvConfigured: status.geminiEnvConfigured,
-    },
+    message: clear ? "Gemini key cleared." : "Gemini key saved for your account only.",
+    status: result.status,
+  };
+}
+
+export async function saveShodanKeyAction(
+  _prev: ByokActionState,
+  formData: FormData,
+): Promise<ByokActionState> {
+  try {
+    await requireUser();
+  } catch {
+    return { ...empty, error: "Authentication required" };
+  }
+
+  const clear = formData.get("clearShodan") === "on";
+  const raw = String(formData.get("shodanApiKey") ?? "");
+  const shodan = sanitizeApiKey(raw);
+
+  if (!clear && isMaskOrEmpty(raw)) {
+    const status = await getByokStatus();
+    return {
+      ok: true,
+      error: null,
+      message: status.shodanConfigured ? "Shodan key unchanged." : "Paste a Shodan key to save.",
+      status,
+    };
+  }
+
+  if (!clear && (shodan.length < 16 || shodan.length > 200)) {
+    return { ...empty, error: "Shodan key length looks invalid.", status: await getByokStatus() };
+  }
+
+  // Soft-validate against Shodan api-info (does not require Membership).
+  if (!clear) {
+    try {
+      const infoRes = await fetch(
+        `https://api.shodan.io/api-info?key=${encodeURIComponent(shodan)}`,
+        { signal: AbortSignal.timeout(8_000), headers: { accept: "application/json" } },
+      );
+      if (infoRes.status === 401) {
+        return {
+          ...empty,
+          error: "Shodan rejected this API key (invalid).",
+          status: await getByokStatus(),
+        };
+      }
+    } catch {
+      // Network blip — still allow save; scan path will report honestly.
+    }
+  }
+
+  const result = await persistMySealedKey({
+    shodan: clear ? null : shodan,
+    clearShodan: clear,
+  });
+
+  revalidatePath("/settings");
+  if (!result.ok) {
+    return { ...empty, error: result.error, status: await getByokStatus() };
+  }
+  return {
+    ok: true,
+    error: null,
+    message: clear
+      ? "Shodan key cleared."
+      : "Shodan key saved for your account only. Host/DNS APIs need Membership; InternetDB works without it.",
+    status: result.status,
   };
 }

@@ -290,3 +290,121 @@ body {
 .scroll-thin::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* System Override (login spectacle from UI branch) */
+.bg-grid {
+  background-size: 40px 40px;
+  background-image:
+    linear-gradient(to right, rgba(184, 240, 76, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(184, 240, 76, 0.05) 1px, transparent 1px);
+}
+
+.glitch-3d {
+  position: relative;
+  color: var(--live);
+  text-shadow:
+    0px 3px 0px rgba(89, 133, 21, 0.7),
+    0px 6px 0px rgba(58, 87, 14, 0.5),
+    0px 9px 0px rgba(29, 43, 7, 0.3),
+    0px 12px 12px rgba(184, 240, 76, 0.4);
+}
+
+.glitch-3d::before,
+.glitch-3d::after {
+  content: attr(data-text);
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.8;
+}
+
+.glitch-3d::before {
+  left: 2px;
+  text-shadow: -2px 0 var(--scan);
+  clip-path: polygon(0 0, 100% 0, 100% 35%, 0 35%);
+  animation: glitch-anim-1 2s infinite linear alternate-reverse;
+}
+
+.glitch-3d::after {
+  left: -2px;
+  text-shadow: -2px 0 var(--critical);
+  clip-path: polygon(0 65%, 100% 65%, 100% 100%, 0 100%);
+  animation: glitch-anim-2 3s infinite linear alternate-reverse;
+}
+
+@keyframes glitch-anim-1 {
+  0% {
+    clip-path: polygon(0 10%, 100% 10%, 100% 30%, 0 30%);
+    transform: translate(0);
+  }
+  20% {
+    clip-path: polygon(0 15%, 100% 15%, 100% 20%, 0 20%);
+    transform: translate(-2px, 1px);
+  }
+  40% {
+    clip-path: polygon(0 2%, 100% 2%, 100% 40%, 0 40%);
+    transform: translate(2px, -1px);
+  }
+  60% {
+    clip-path: polygon(0 25%, 100% 25%, 100% 30%, 0 30%);
+    transform: translate(-1px, 2px);
+  }
+  80% {
+    clip-path: polygon(0 50%, 100% 50%, 100% 60%, 0 60%);
+    transform: translate(1px, -2px);
+  }
+  100% {
+    clip-path: polygon(0 70%, 100% 70%, 100% 80%, 0 80%);
+    transform: translate(0);
+  }
+}
+
+@keyframes glitch-anim-2 {
+  0% {
+    clip-path: polygon(0 80%, 100% 80%, 100% 100%, 0 100%);
+    transform: translate(0);
+  }
+  20% {
+    clip-path: polygon(0 75%, 100% 75%, 100% 80%, 0 80%);
+    transform: translate(2px, -1px);
+  }
+  40% {
+    clip-path: polygon(0 60%, 100% 60%, 100% 90%, 0 90%);
+    transform: translate(-2px, 1px);
+  }
+  60% {
+    clip-path: polygon(0 85%, 100% 85%, 100% 90%, 0 90%);
+    transform: translate(1px, -2px);
+  }
+  80% {
+    clip-path: polygon(0 50%, 100% 50%, 100% 60%, 0 60%);
+    transform: translate(-1px, 2px);
+  }
+  100% {
+    clip-path: polygon(0 20%, 100% 20%, 100% 30%, 0 30%);
+    transform: translate(0);
+  }
+}
+
+@keyframes terminal-scroll {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
+}
+
+.animate-terminal-scroll {
+  animation: terminal-scroll 10s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glitch-3d::before,
+  .glitch-3d::after,
+  .animate-terminal-scroll {
+    animation: none !important;
+  }
+}

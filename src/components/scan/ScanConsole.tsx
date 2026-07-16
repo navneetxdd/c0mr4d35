@@ -357,21 +357,23 @@ function ReconProofPanel({ scan }: { scan: SafeScanResult }) {
       <MonoEyebrow index="02">Live recon proof</MonoEyebrow>
       <div className="mt-4 grid gap-4 lg:grid-cols-2">
         <div className="overflow-auto rounded-sm border border-edge">
-          <p className="border-b border-edge px-3 py-2 type-label">Open TCP ports</p>
+          <p className="border-b border-edge px-3 py-2 type-label">Open ports (TCP + InternetDB/Shodan)</p>
           {openPorts.length ? (
             <table className="w-full text-left font-data text-[11px]">
               <thead className="text-text-faint">
                 <tr>
                   <th className="px-3 py-1">PORT</th>
-                  <th className="px-3 py-1">RTT</th>
-                  <th className="px-3 py-1">PROBED</th>
+                  <th className="px-3 py-1">SOURCE</th>
+                  <th className="px-3 py-1">SEEN</th>
                 </tr>
               </thead>
               <tbody>
                 {openPorts.map((p) => (
                   <tr key={p.port} className="border-t border-edge">
                     <td className="px-3 py-1 text-text">{p.port}</td>
-                    <td className="px-3 py-1 text-text">{p.rttMs}ms</td>
+                    <td className="px-3 py-1 text-text">
+                      {p.rttMs === 0 ? "InternetDB/Shodan index" : `TCP ${p.rttMs}ms`}
+                    </td>
                     <td className="px-3 py-1 text-text-faint">{p.probedAt}</td>
                   </tr>
                 ))}
