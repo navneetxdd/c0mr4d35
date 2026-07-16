@@ -147,9 +147,10 @@ function SignInForm({ onSwitch }: { onSwitch: () => void }) {
 
       {configError ? (
         <AuthBanner tone="critical">
-          Missing local env. Run `npm run setup` (or copy `.env.example` → `.env.local`), then restart
-          `npm run dev`. Need the private `SUPABASE_SERVICE_ROLE_KEY` from a teammate for scans —
-          or use https://systemsiege.vercel.app.
+          Local env incomplete. Stop the server, run `npm run setup`, then `npm run
+          dev` again. If it still fails, delete `.env.local` and re-run setup. Scans
+          need a private `SUPABASE_SERVICE_ROLE_KEY` from a teammate — or use
+          https://systemsiege.vercel.app.
         </AuthBanner>
       ) : null}
       {authError ? (

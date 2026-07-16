@@ -63,6 +63,16 @@ Add these to `.env.local` (ask a teammate privately — **never commit**):
 
 Or skip local secrets and use the hosted app: **[https://systemsiege.vercel.app](https://systemsiege.vercel.app)**
 
+If login shows “Local env incomplete”:
+
+```bash
+# stop npm run dev first
+npm run setup
+npm run dev
+```
+
+If it still fails: delete `.env.local`, run `npm run setup` again, then restart the dev server (Next only loads env at startup).
+
 ### 3. Database
 
 Migrations live in `supabase/migrations/` (`0001` … `0008`). The shared project already has them applied.
