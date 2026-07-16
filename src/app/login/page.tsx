@@ -36,60 +36,61 @@ function AuthPage() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
 
   return (
-    <div className="relative flex min-h-[100dvh] w-full items-center justify-center overflow-hidden bg-void bg-grid">
+    <div className="relative min-h-[100dvh] w-full overflow-hidden bg-void bg-grid">
       <SystemOverrideShader />
 
-      {/* Proper circular radar (conic sweep — not a rotating rectangle) */}
-      <div
-        className="pointer-events-none absolute left-1/2 top-1/2 z-[1] -translate-x-1/2 -translate-y-1/2 opacity-40 mix-blend-screen"
-        aria-hidden
-      >
-        <div className="radar-scope relative h-[min(70vw,520px)] w-[min(70vw,520px)] sm:h-[640px] sm:w-[640px]">
-          <div className="absolute inset-0 rounded-full border border-live/25" />
-          <div className="absolute inset-[12%] rounded-full border border-live/15" />
-          <div className="absolute inset-[28%] rounded-full border border-live/10" />
-          <div className="absolute inset-[44%] rounded-full border border-live/8" />
-          <div className="radar-crosshair absolute inset-0" />
-          <div className="radar-sweep-beam absolute inset-0 rounded-full" />
-          <div className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-live/80 shadow-[0_0_12px_var(--live)]" />
-        </div>
-      </div>
+      <TerminalLogs side="left" className="z-[5] hidden xl:block" />
+      <TerminalLogs side="right" className="z-[5] hidden xl:block" />
 
-      <TerminalLogs side="left" className="z-10 hidden lg:block" />
-      <TerminalLogs side="right" className="z-10 hidden lg:block" />
-
-      <div className="absolute left-6 top-6 z-20 flex items-center gap-2">
+      <div className="pointer-events-none absolute left-6 top-6 z-20 flex items-center gap-2">
         <span className="animate-pulse font-data font-bold text-live">{"_>"}</span>
         <span className="font-data text-[12px] uppercase tracking-[0.2em] text-live/80">
           SYSTEM_OVERRIDE
         </span>
       </div>
 
-      <div className="relative z-20 flex w-full flex-col items-center justify-center px-4">
-        <div className="mb-10 select-none text-center sm:mb-12">
-          <h1
-            className="glitch-3d type-display font-display text-6xl font-bold uppercase tracking-tight text-live sm:text-8xl lg:text-[120px]"
-            data-text="DATUM"
-          >
-            DATUM
-          </h1>
-          <p className="mx-auto mt-5 max-w-md font-data text-[13px] leading-relaxed text-live/55">
-            Establish the truth of a web asset, then watch for the moment it stops being true.
-          </p>
+      {/* One centered stack: radar + brand + form share the same axis */}
+      <div className="relative z-20 mx-auto flex min-h-[100dvh] w-full max-w-[28rem] flex-col items-center justify-center px-4 py-16 sm:max-w-md">
+        <div
+          className="pointer-events-none absolute left-1/2 top-1/2 z-0 -translate-x-1/2 -translate-y-1/2 opacity-45 mix-blend-screen"
+          aria-hidden
+        >
+          <div className="radar-scope relative size-[min(92vw,28rem)] sm:size-[32rem]">
+            <div className="absolute inset-0 rounded-full border border-live/25" />
+            <div className="absolute inset-[12%] rounded-full border border-live/15" />
+            <div className="absolute inset-[28%] rounded-full border border-live/10" />
+            <div className="absolute inset-[44%] rounded-full border border-live/8" />
+            <div className="radar-crosshair absolute inset-0" />
+            <div className="radar-sweep-beam absolute inset-0 rounded-full" />
+            <div className="absolute left-1/2 top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-live/80 shadow-[0_0_12px_var(--live)]" />
+          </div>
         </div>
 
-        <div className="w-full max-w-md px-2 sm:px-6">
-          <section className="relative flex items-center rounded-md border border-live/20 bg-carbon/85 px-6 py-10 shadow-[0_0_30px_rgba(184,240,76,0.1)] backdrop-blur-md sm:px-12">
+        <div className="relative z-10 flex w-full flex-col items-center">
+          <div className="mb-8 w-full select-none text-center sm:mb-10">
+            <h1
+              className="glitch-3d type-display mx-auto font-display text-[clamp(3rem,12vw,5.5rem)] font-bold uppercase tracking-tight text-live"
+              data-text="DATUM"
+            >
+              DATUM
+            </h1>
+            <p className="mx-auto mt-4 max-w-[22rem] text-balance font-data text-[13px] leading-relaxed text-live/55">
+              Establish the truth of a web asset, then watch for the moment it stops being true.
+            </p>
+          </div>
+
+          <section className="relative w-full rounded-md border border-live/20 bg-carbon/90 px-6 py-9 shadow-[0_0_30px_rgba(184,240,76,0.1)] backdrop-blur-md sm:px-10 sm:py-10">
             <RegistrationMarks />
             {mode === "signin" ? (
               <SignInForm onSwitch={() => setMode("signup")} />
             ) : (
               <SignUpForm onSwitch={() => setMode("signin")} />
             )}
-            <p className="absolute bottom-[-36px] left-0 font-data text-[11px] text-live/40">
-              {">"} build {BUILD_HASH} · SECURE SESSION_
-            </p>
           </section>
+
+          <p className="mt-5 text-center font-data text-[11px] tracking-wide text-live/40">
+            {">"} build {BUILD_HASH} · SECURE SESSION_
+          </p>
         </div>
       </div>
     </div>
@@ -111,11 +112,11 @@ function SignInForm({ onSwitch }: { onSwitch: () => void }) {
   }, [state.signedIn, state.next, router]);
 
   return (
-    <form className="relative w-full max-w-md space-y-5" action={formAction}>
+    <form className="relative w-full space-y-5" action={formAction}>
       <input type="hidden" name="next" value={searchParams.get("next") ?? "/"} />
       <Honeypot />
 
-      <div>
+      <div className="text-center sm:text-left">
         <p className="type-label !text-live/60">Authenticate</p>
         <h2 className="mt-1 type-h2 text-live">Terminal Access</h2>
       </div>
@@ -186,10 +187,10 @@ function SignUpForm({ onSwitch }: { onSwitch: () => void }) {
   }, [state.signedIn, state.next, router]);
 
   return (
-    <form className="relative w-full max-w-md space-y-5" action={formAction}>
+    <form className="relative w-full space-y-5" action={formAction}>
       <Honeypot />
 
-      <div>
+      <div className="text-center sm:text-left">
         <p className="type-label !text-live/60">Register</p>
         <h2 className="mt-1 type-h2 text-live">Request Access</h2>
       </div>

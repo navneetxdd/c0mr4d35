@@ -344,6 +344,7 @@ body {
 
 .glitch-3d {
   position: relative;
+  display: inline-block;
   color: var(--live);
   text-shadow:
     0px 3px 0px rgba(89, 133, 21, 0.7),

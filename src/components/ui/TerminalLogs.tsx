@@ -54,12 +54,7 @@ export function TerminalLogs({ className, side = "left" }: { className?: string;
         WebkitMaskImage: "linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)",
       }}
     >
-      <div className="absolute top-4 border-b border-live/30 pb-1 mb-2">
-        <span className="bg-live text-void px-1 font-bold">
-          VULNERABILITY ASSESSMENT
-        </span>
-      </div>
-      <div className="mt-12 h-[200%] w-full animate-terminal-scroll">
+      <div className="mt-2 h-[200%] w-full animate-terminal-scroll">
         {blocks}
       </div>
     </div>
