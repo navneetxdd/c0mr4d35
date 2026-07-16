@@ -113,7 +113,32 @@ function isAbortError(err: unknown): boolean {
   return err.name === "AbortError" || /aborted|timeout/i.test(err.message);
 }
 
-async function generateGeminiJson(apiKey: string, prompt: string): Promise<string> {
+/** Pull a JSON object out of model text (fences, prose wrapping, trailing junk). */
+function extractJsonObject(raw: string): string {
+  let text = raw.trim();
+  const fenced = /^```(?:json)?\s*([\s\S]*?)```$/i.exec(text);
+  if (fenced?.[1]) text = fenced[1].trim();
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start >= 0 && end > start) return text.slice(start, end + 1);
+  return text;
+}
+
+function parseVerdictJson(raw: string): Partial<AiVerdict> {
+  const candidate = extractJsonObject(raw);
+  try {
+    return JSON.parse(candidate) as Partial<AiVerdict>;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "JSON parse failed";
+    throw new Error(`Gemini returned unusable JSON (${detail})`);
+  }
+}
+
+async function generateGeminiJson(
+  apiKey: string,
+  prompt: string,
+  maxOutputTokens: number,
+): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
   try {
@@ -128,7 +153,7 @@ async function generateGeminiJson(apiKey: string, prompt: string): Promise<strin
         generationConfig: {
           temperature: 0.2,
           responseMimeType: "application/json",
-          maxOutputTokens: 1024,
+          maxOutputTokens,
         },
       }),
       signal: controller.signal,
@@ -141,11 +166,18 @@ async function generateGeminiJson(apiKey: string, prompt: string): Promise<strin
     }
 
     const payload = JSON.parse(bodyText) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      candidates?: Array<{
+        finishReason?: string;
+        content?: { parts?: Array<{ text?: string }> };
+      }>;
     };
-    const text = payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
+    const candidate = payload.candidates?.[0];
+    const text = candidate?.content?.parts?.map((p) => p.text ?? "").join("") ?? "";
     if (!text.trim()) {
       throw new Error("Gemini returned an empty response");
+    }
+    if (candidate?.finishReason === "MAX_TOKENS") {
+      throw new Error("Gemini response truncated (MAX_TOKENS)");
     }
     return text;
   } finally {
@@ -153,13 +185,32 @@ async function generateGeminiJson(apiKey: string, prompt: string): Promise<strin
   }
 }
 
+function compactPrompt(scan: ScanResult): string {
+  return [
+    buildPrompt(scan),
+    "",
+    "CONSTRAINTS: summary ≤ 120 chars; at most 3 prioritizedRisks; at most 3 recommendedActions; valid JSON only.",
+  ].join("\n");
+}
+
 export async function getAiVerdict(scan: ScanResult, apiKeyOverride?: string | null): Promise<AiVerdict> {
   const apiKey = apiKeyOverride?.trim() || process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) return heuristicFallback(scan, "Gemini API key not configured — add one in Settings");
 
   try {
-    const text = await generateGeminiJson(apiKey, buildPrompt(scan));
-    const parsed = JSON.parse(text) as Partial<AiVerdict>;
+    const attempt = async (prompt: string) => parseVerdictJson(await generateGeminiJson(apiKey, prompt, 2048));
+
+    let parsed: Partial<AiVerdict>;
+    try {
+      parsed = await attempt(buildPrompt(scan));
+    } catch (firstErr) {
+      const msg = firstErr instanceof Error ? firstErr.message : "";
+      if (/truncated|MAX_TOKENS|unusable JSON|Unterminated string|Unexpected token/i.test(msg)) {
+        parsed = await attempt(compactPrompt(scan));
+      } else {
+        throw firstErr;
+      }
+    }
 
     return {
       available: true,
