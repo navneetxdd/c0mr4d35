@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { safeRedirectPath } from "@/lib/auth/safe-redirect";
 
 /**
  * Refreshes the Supabase session on every request and gates the console behind
@@ -56,7 +57,14 @@ export async function middleware(request: NextRequest) {
   if (!user && !isPublic(pathname)) {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/login";
-    redirect.searchParams.set("next", pathname);
+    redirect.searchParams.set("next", safeRedirectPath(pathname));
+    return NextResponse.redirect(redirect);
+  }
+
+  if (user && pathname === "/login") {
+    const redirect = request.nextUrl.clone();
+    redirect.pathname = safeRedirectPath(request.nextUrl.searchParams.get("next"));
+    redirect.search = "";
     return NextResponse.redirect(redirect);
   }
 

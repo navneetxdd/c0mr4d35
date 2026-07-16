@@ -1,53 +1,32 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useActionState, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { signInAction, signUpAction, type AuthActionState } from "@/app/actions/auth";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { RegistrationMarks } from "@/components/ui/RegistrationMarks";
 import { BUILD_HASH } from "@/lib/build";
-import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/format";
+
+const INITIAL: AuthActionState = {
+  ok: false,
+  signedIn: false,
+  next: "/",
+  error: null,
+  message: null,
+};
 
 export default function LoginPage() {
   return (
     <Suspense>
-      <LoginForm />
+      <AuthPage />
     </Suspense>
   );
 }
 
-function LoginForm() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    if (!email.includes("@") || password.length < 6) {
-      setError("Enter a valid email and a password of at least 6 characters");
-      return;
-    }
-    setLoading(true);
-    try {
-      const supabase = createClient();
-      const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
-      if (authError) {
-        setError("Invalid credentials");
-        setLoading(false);
-        return;
-      }
-      const next = searchParams.get("next") || "/";
-      router.push(next.startsWith("/") ? next : "/");
-      router.refresh();
-    } catch {
-      setError("Sign-in is unavailable — check the server configuration");
-      setLoading(false);
-    }
-  }
+function AuthPage() {
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
 
   return (
     <div className="grid min-h-[100dvh] lg:grid-cols-[2fr_3fr]">
@@ -77,35 +56,194 @@ function LoginForm() {
 
       <section className="relative flex items-center bg-carbon px-6 py-12 sm:px-12">
         <RegistrationMarks />
-        <form className="relative w-full max-w-md space-y-5" onSubmit={handleSubmit}>
-          <div>
-            <p className="type-label">Authenticate</p>
-            <h1 className="mt-2 type-h1 text-text">Sign in</h1>
-            <p className="mt-2 type-small text-text-dim lg:hidden">
-              Establish the truth. Measure the drift.
-            </p>
-          </div>
-          <Input
-            label="Email"
-            type="email"
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            error={error ? " " : undefined}
-          />
-          <Input
-            label="Password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            error={error ?? undefined}
-          />
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Authenticating…" : "Authenticate"}
-          </Button>
-        </form>
+        {mode === "signin" ? (
+          <SignInForm onSwitch={() => setMode("signup")} />
+        ) : (
+          <SignUpForm onSwitch={() => setMode("signin")} />
+        )}
       </section>
     </div>
+  );
+}
+
+function SignInForm({ onSwitch }: { onSwitch: () => void }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [state, formAction, pending] = useActionState(signInAction, INITIAL);
+  const configError = searchParams.get("error") === "config";
+  const authError = searchParams.get("error") === "auth";
+
+  useEffect(() => {
+    if (state.signedIn) {
+      router.replace(state.next);
+      router.refresh();
+    }
+  }, [state.signedIn, state.next, router]);
+
+  return (
+    <form className="relative w-full max-w-md space-y-5" action={formAction}>
+      <input type="hidden" name="next" value={searchParams.get("next") ?? "/"} />
+      <Honeypot />
+
+      <div>
+        <p className="type-label">Authenticate</p>
+        <h1 className="mt-2 type-h1 text-text">Sign in</h1>
+        <p className="mt-2 type-small text-text-dim lg:hidden">
+          Establish the truth. Measure the drift.
+        </p>
+      </div>
+
+      {configError ? (
+        <AuthBanner tone="critical">
+          Authentication is unavailable — server configuration is incomplete.
+        </AuthBanner>
+      ) : null}
+      {authError ? (
+        <AuthBanner tone="critical">Sign-in link expired or invalid. Try again.</AuthBanner>
+      ) : null}
+      {state.error ? <AuthBanner tone="critical">{state.error}</AuthBanner> : null}
+      {state.message ? <AuthBanner tone="secure">{state.message}</AuthBanner> : null}
+
+      <Input
+        label="Email"
+        name="email"
+        type="email"
+        autoComplete="email"
+        required
+        maxLength={254}
+        disabled={pending}
+      />
+      <Input
+        label="Password"
+        name="password"
+        type="password"
+        autoComplete="current-password"
+        required
+        minLength={1}
+        maxLength={128}
+        disabled={pending}
+      />
+
+      <Button type="submit" className="w-full" disabled={pending}>
+        {pending ? "Authenticating…" : "Authenticate"}
+      </Button>
+
+      <p className="type-small text-text-dim">
+        No account?{" "}
+        <button
+          type="button"
+          onClick={onSwitch}
+          className="font-data text-[12px] text-scan underline-offset-2 hover:underline"
+        >
+          Create one
+        </button>
+      </p>
+    </form>
+  );
+}
+
+function SignUpForm({ onSwitch }: { onSwitch: () => void }) {
+  const router = useRouter();
+  const [state, formAction, pending] = useActionState(signUpAction, INITIAL);
+
+  useEffect(() => {
+    if (state.signedIn) {
+      router.replace(state.next);
+      router.refresh();
+    }
+  }, [state.signedIn, state.next, router]);
+
+  return (
+    <form className="relative w-full max-w-md space-y-5" action={formAction}>
+      <Honeypot />
+
+      <div>
+        <p className="type-label">Register</p>
+        <h1 className="mt-2 type-h1 text-text">Create account</h1>
+        <p className="mt-2 type-small text-text-dim">
+          New accounts start as viewer. An admin can promote access later.
+        </p>
+      </div>
+
+      {state.error ? <AuthBanner tone="critical">{state.error}</AuthBanner> : null}
+      {state.message ? <AuthBanner tone="secure">{state.message}</AuthBanner> : null}
+
+      <Input
+        label="Email"
+        name="email"
+        type="email"
+        autoComplete="email"
+        required
+        maxLength={254}
+        disabled={pending}
+      />
+      <Input
+        label="Password"
+        name="password"
+        type="password"
+        autoComplete="new-password"
+        required
+        minLength={12}
+        maxLength={128}
+        disabled={pending}
+        hint="At least 12 characters with upper, lower, number, and symbol."
+      />
+      <Input
+        label="Confirm password"
+        name="confirmPassword"
+        type="password"
+        autoComplete="new-password"
+        required
+        minLength={12}
+        maxLength={128}
+        disabled={pending}
+      />
+
+      <Button type="submit" className="w-full" disabled={pending}>
+        {pending ? "Creating account…" : "Create account"}
+      </Button>
+
+      <p className="type-small text-text-dim">
+        Already registered?{" "}
+        <button
+          type="button"
+          onClick={onSwitch}
+          className="font-data text-[12px] text-scan underline-offset-2 hover:underline"
+        >
+          Sign in
+        </button>
+      </p>
+    </form>
+  );
+}
+
+function Honeypot() {
+  return (
+    <div className="absolute -left-[9999px] h-0 w-0 overflow-hidden" aria-hidden="true">
+      <label htmlFor="company">Company</label>
+      <input id="company" name="company" type="text" tabIndex={-1} autoComplete="off" />
+    </div>
+  );
+}
+
+function AuthBanner({
+  children,
+  tone,
+}: {
+  children: string;
+  tone: "critical" | "secure";
+}) {
+  return (
+    <p
+      className={cn(
+        "rounded-sm border px-3 py-2 font-data text-[12px]",
+        tone === "critical"
+          ? "border-critical/40 bg-critical/10 text-critical"
+          : "border-secure/40 bg-secure/10 text-secure",
+      )}
+      role="alert"
+    >
+      {children}
+    </p>
   );
 }

@@ -1,16 +1,28 @@
 import "server-only";
 import { hasRole } from "@/lib/auth/rbac";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabase } from "@/lib/supabase/server";
 import type {
   Asset as DbAsset,
+  Baseline,
   Scan,
   Finding,
   AuditEntry,
   Profile,
 } from "@/lib/supabase/types";
-import type { Asset, FeedEvent, Incident, Member, Posture, ScanEntry, Telemetry } from "@/lib/types";
+import type {
+  Asset,
+  FeedEvent,
+  Incident,
+  Member,
+  Posture,
+  ScanEntry,
+  Telemetry,
+  VisualEvidence,
+} from "@/lib/types";
 import type { AiVerdict } from "@/lib/ai/gemini";
 import { mapFindingRow } from "@/lib/data/findings";
+import { createEvidenceSignedUrl } from "@/lib/scan/evidence-storage";
 
 import type { ShellContext } from "@/lib/data/shell";
 export type { ShellContext } from "@/lib/data/shell";
@@ -33,6 +45,10 @@ export function mapAssetRow(
   latest: Scan | null,
   driftHistory: number[],
   openIncident: boolean,
+  thumbnail = "",
+  baselineCapture = "",
+  currentCapture = "",
+  diffCapture = "",
 ): Asset {
   const scanning = latest?.status === "scanning" || latest?.status === "queued";
   return {
@@ -43,9 +59,10 @@ export function mapAssetRow(
     driftScore: Number(latest?.drift_pct ?? 0),
     driftHistory,
     lastCheckAt: latest?.finished_at ?? latest?.started_at ?? asset.created_at,
-    thumbnail: "",
-    baselineCapture: "",
-    currentCapture: "",
+    thumbnail,
+    baselineCapture,
+    currentCapture,
+    diffCapture,
     openIncident,
     scanIntervalMin: asset.scan_interval_min,
   };
@@ -53,6 +70,7 @@ export function mapAssetRow(
 
 export async function fetchAssetsWithScans(): Promise<Asset[]> {
   const supabase = await createServerSupabase();
+  const admin = createAdminClient();
   const { data: assets } = await supabase.from("assets").select("*").order("created_at", { ascending: false });
   if (!assets?.length) return [];
 
@@ -68,10 +86,16 @@ export async function fetchAssetsWithScans(): Promise<Asset[]> {
     .select("asset_id")
     .in("asset_id", ids)
     .eq("status", "open");
+  const { data: baselines } = await supabase
+    .from("baselines")
+    .select("asset_id, screenshot_path")
+    .in("asset_id", ids)
+    .order("established_at", { ascending: false });
 
   const openSet = new Set((incidents ?? []).map((i) => i.asset_id));
   const latestByAsset = new Map<string, Scan>();
   const historyByAsset = new Map<string, number[]>();
+  const baselineByAsset = new Map<string, Baseline>();
 
   for (const s of scans ?? []) {
     if (!latestByAsset.has(s.asset_id)) latestByAsset.set(s.asset_id, s as Scan);
@@ -79,14 +103,37 @@ export async function fetchAssetsWithScans(): Promise<Asset[]> {
     if (hist.length < 7 && s.drift_pct != null) hist.push(Number(s.drift_pct));
     historyByAsset.set(s.asset_id, hist);
   }
+  for (const b of baselines ?? []) {
+    if (!baselineByAsset.has(b.asset_id)) baselineByAsset.set(b.asset_id, b as Baseline);
+  }
 
-  return (assets as DbAsset[]).map((a) =>
-    mapAssetRow(
-      a,
-      latestByAsset.get(a.id) ?? null,
-      historyByAsset.get(a.id) ?? [],
-      openSet.has(a.id),
-    ),
+  const urlCache = new Map<string, string | null>();
+  async function signed(path: string | null | undefined) {
+    if (!path) return "";
+    if (!urlCache.has(path)) {
+      urlCache.set(path, await createEvidenceSignedUrl(admin, path));
+    }
+    return urlCache.get(path) ?? "";
+  }
+
+  return Promise.all(
+    (assets as DbAsset[]).map(async (a) => {
+      const latest = latestByAsset.get(a.id) ?? null;
+      const baseline = baselineByAsset.get(a.id) ?? null;
+      const currentCapture = await signed(latest?.screenshot_path);
+      const baselineCapture = await signed(baseline?.screenshot_path);
+      const diffCapture = await signed(latest?.diff_path);
+      return mapAssetRow(
+        a,
+        latest,
+        historyByAsset.get(a.id) ?? [],
+        openSet.has(a.id),
+        currentCapture || baselineCapture,
+        baselineCapture,
+        currentCapture,
+        diffCapture,
+      );
+    }),
   );
 }
 
@@ -156,12 +203,13 @@ export interface AssetDetailData {
   assetView: Asset;
   scans: ScanEntry[];
   findings: import("@/lib/types").Finding[];
-  baselineHtml: string | null;
+  evidence: VisualEvidence;
   aiVerdict: AiVerdict | null;
 }
 
 export async function fetchAssetDetail(id: string): Promise<AssetDetailData | null> {
   const supabase = await createServerSupabase();
+  const admin = createAdminClient();
   const { data: asset } = await supabase.from("assets").select("*").eq("id", id).single();
   if (!asset) return null;
 
@@ -175,7 +223,7 @@ export async function fetchAssetDetail(id: string): Promise<AssetDetailData | nu
       .limit(50),
     supabase
       .from("baselines")
-      .select("html_snapshot")
+      .select("html_snapshot,screenshot_path,favicon_hash")
       .eq("asset_id", id)
       .order("established_at", { ascending: false })
       .limit(1)
@@ -196,6 +244,7 @@ export async function fetchAssetDetail(id: string): Promise<AssetDetailData | nu
     id: s.id,
     at: s.finished_at ?? s.started_at,
     driftPct: Number(s.drift_pct ?? 0),
+    visualDriftPct: Number(s.visual_drift_pct ?? 0),
     posture: mapPosture(s.posture),
     trigger: s.trigger === "cron" ? "CRON" : "MANUAL",
     durationMs: s.finished_at
@@ -209,12 +258,37 @@ export async function fetchAssetDetail(id: string): Promise<AssetDetailData | nu
     .filter((f) => f.scan_id === latestScanId)
     .map((f) => mapFindingRow(f as Finding));
 
+  const [baselineCapture, currentCapture, diffCapture] = await Promise.all([
+    createEvidenceSignedUrl(admin, (baseline as Baseline | null)?.screenshot_path ?? null),
+    createEvidenceSignedUrl(admin, latest?.screenshot_path ?? null),
+    createEvidenceSignedUrl(admin, latest?.diff_path ?? null),
+  ]);
+
+  assetView.thumbnail = currentCapture || baselineCapture || "";
+  assetView.baselineCapture = baselineCapture ?? "";
+  assetView.currentCapture = currentCapture ?? "";
+  assetView.diffCapture = diffCapture ?? "";
+
   return {
     asset: asset as DbAsset,
     assetView,
     scans: scanEntries,
     findings: latestFindings,
-    baselineHtml: baseline?.html_snapshot ?? null,
+    evidence: {
+      baselineState: baseline ? "reused" : "none",
+      domDriftPct: Number(latest?.drift_pct ?? 0),
+      visualDriftPct: latest?.visual_drift_pct ?? null,
+      baselineHtml: (baseline as Baseline | null)?.html_snapshot ?? null,
+      baselineCapture: baselineCapture ?? null,
+      currentCapture: currentCapture ?? null,
+      diffCapture: diffCapture ?? null,
+      faviconHash: (latest?.favicon_hash as string | null) ?? ((baseline as Baseline | null)?.favicon_hash ?? null),
+      faviconChanged: Boolean(latest?.favicon_changed),
+      faviconUrl: null,
+      notes: Array.isArray((latest?.signals as { evidenceNotes?: string[] } | null)?.evidenceNotes)
+        ? (((latest?.signals as { evidenceNotes?: string[] }).evidenceNotes) ?? [])
+        : [],
+    },
     aiVerdict: (latest?.ai_verdict as AiVerdict | null) ?? null,
   };
 }

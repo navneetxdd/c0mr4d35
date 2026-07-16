@@ -117,7 +117,7 @@ export function ScanConsole({ shell, baselineHtml = null }: ScanConsoleProps) {
         </div>
         <p className="mt-2 type-data-sm text-text-faint">
           Public hosts only · private / loopback / metadata ranges are rejected before any request.
-          {baselineHtml ? " · Baseline HTML attached for defacement detection." : ""}
+          {baselineHtml ? " · Baseline HTML attached for defacement detection." : " · First ad-hoc run establishes a baseline for future comparison."}
         </p>
       </section>
 
@@ -193,11 +193,51 @@ function Results({ scan, verdict }: { scan: SafeScanResult; verdict?: AiVerdict 
           ) : null}
         </section>
 
+        <EvidencePanel scan={scan} />
         <FindingsPanel scan={scan} />
       </div>
 
       <VerdictPanel verdict={verdict} />
     </div>
+  );
+}
+
+function EvidencePanel({ scan }: { scan: SafeScanResult }) {
+  return (
+    <section className="panel relative p-4">
+      <RegistrationMarks />
+      <MonoEyebrow index="02">Evidence state</MonoEyebrow>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric label="BASELINE" value={(scan.baselineState ?? "none").toUpperCase()} />
+        <Metric
+          label="VISUAL DRIFT"
+          value={scan.visualDriftPct != null ? `${scan.visualDriftPct}%` : "N/A"}
+        />
+        <Metric label="FAVICON" value={scan.faviconChanged ? "CHANGED" : scan.faviconHash ? "STABLE" : "N/A"} />
+        <Metric label="STACK" value={scan.fingerprint ?? "—"} />
+      </div>
+
+      {(scan.screenshotUrl || scan.baselineScreenshotUrl || scan.diffUrl) ? (
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <EvidenceCapture label="BASELINE" src={scan.baselineScreenshotUrl ?? null} />
+          <EvidenceCapture label="CURRENT" src={scan.screenshotUrl ?? null} />
+          <EvidenceCapture label="PIXEL DIFF" src={scan.diffUrl ?? null} />
+        </div>
+      ) : null}
+
+      {scan.evidenceNotes?.length ? (
+        <div className="mt-4 rounded-sm border border-edge bg-void/40 p-3">
+          <p className="type-label mb-2">Notes</p>
+          <ul className="space-y-1">
+            {scan.evidenceNotes.map((note) => (
+              <li key={note} className="font-data text-[11px] text-text-faint">
+                {note}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -236,6 +276,12 @@ function FindingsPanel({ scan }: { scan: SafeScanResult }) {
                         <span className="min-w-0 flex-1 font-data text-[12px] text-text">{f.title}</span>
                       </div>
                       <p className="mt-1.5 type-small text-text-dim">{f.detail}</p>
+                      {f.url ? (
+                        <p className="mt-1 font-data text-[11px] text-text-faint">OBSERVED ON · {f.url}</p>
+                      ) : null}
+                      {f.evidence ? (
+                        <p className="mt-1 font-data text-[11px] text-text-faint">EVIDENCE · {f.evidence}</p>
+                      ) : null}
                       <p className="mt-1 type-data-sm text-text-faint">REMEDIATION · {f.remediation}</p>
                       {f.reference ? (
                         <a
@@ -256,6 +302,24 @@ function FindingsPanel({ scan }: { scan: SafeScanResult }) {
         </div>
       )}
     </section>
+  );
+}
+
+function EvidenceCapture({ label, src }: { label: string; src: string | null }) {
+  return (
+    <div className="overflow-hidden rounded-sm border border-edge bg-void">
+      <div className="border-b border-edge px-2 py-1 font-data text-[10px] text-text-faint">
+        {label}
+      </div>
+      {src ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src} alt={label} className="aspect-16/10 w-full object-cover" />
+      ) : (
+        <div className="flex aspect-16/10 items-center justify-center font-data text-[10px] text-text-faint">
+          No image
+        </div>
+      )}
+    </div>
   );
 }
 

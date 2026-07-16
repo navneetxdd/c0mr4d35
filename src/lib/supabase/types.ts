@@ -19,6 +19,7 @@ export interface Asset {
   scan_interval_min: number;
   created_at: string;
   updated_at: string;
+  last_scanned_at?: string | null;
 }
 
 export interface Scan {
@@ -37,10 +38,37 @@ export interface Scan {
   ai_verdict: unknown | null;
   dom_hash: string | null;
   screenshot_path: string | null;
+  diff_path?: string | null;
+  visual_drift_pct?: number | null;
+  favicon_hash?: string | null;
+  favicon_changed?: boolean;
   error: string | null;
   created_by: string | null;
   started_at: string;
   finished_at: string | null;
+}
+
+export interface Baseline {
+  id: string;
+  asset_id: string;
+  dom_hash: string | null;
+  signals: Record<string, unknown>;
+  screenshot_path: string | null;
+  html_snapshot?: string | null;
+  favicon_hash?: string | null;
+  established_by: string | null;
+  established_at: string;
+}
+
+export interface AdhocBaseline {
+  target_key: string;
+  target_url: string;
+  html_snapshot: string | null;
+  signals: Record<string, unknown>;
+  screenshot_path: string | null;
+  favicon_hash: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Finding {

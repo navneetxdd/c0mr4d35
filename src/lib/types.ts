@@ -34,6 +34,7 @@ export interface Asset {
   thumbnail: string;
   baselineCapture: string;
   currentCapture: string;
+  diffCapture?: string;
   openIncident: boolean;
   scanIntervalMin: number;
 }
@@ -49,10 +50,25 @@ export interface ScanEntry {
   id: string;
   at: string;
   driftPct: number;
+  visualDriftPct?: number | null;
   posture: Posture;
   trigger: ScanTrigger;
   durationMs: number;
   status: ScanStatus;
+}
+
+export interface VisualEvidence {
+  baselineState: "created" | "reused" | "provided" | "none";
+  domDriftPct: number;
+  visualDriftPct: number | null;
+  baselineHtml: string | null;
+  baselineCapture: string | null;
+  currentCapture: string | null;
+  diffCapture: string | null;
+  faviconHash: string | null;
+  faviconChanged: boolean;
+  faviconUrl: string | null;
+  notes: string[];
 }
 
 export interface ChangeRegion {

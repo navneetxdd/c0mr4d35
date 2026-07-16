@@ -38,10 +38,10 @@ export interface ScanFinding {
 }
 
 export const RISK_WEIGHT: Record<Risk, number> = {
-  critical: 100,
-  high: 70,
-  medium: 40,
-  low: 15,
+  critical: 45,
+  high: 20,
+  medium: 10,
+  low: 4,
   info: 0,
 };
 
@@ -69,7 +69,7 @@ export function aggregatePosture(findings: ScanFinding[]): Posture {
  *  tail of low findings can't swamp a single critical. */
 export function postureScore(findings: ScanFinding[]): number {
   const penalty = findings.reduce((sum, f) => sum + RISK_WEIGHT[f.risk], 0);
-  return Math.max(0, Math.round(100 - Math.min(100, penalty)));
+  return Math.max(0, Math.round(100 - Math.min(95, penalty)));
 }
 
 /** Stable severity-first sort for presentation. */

@@ -26,6 +26,7 @@ export interface FetchResult {
   status: number;
   headers: Record<string, string>;
   body: string;
+  bodyBytes: Buffer;
   finalUrl: string;
   redirectedTo: string | null;
   elapsedMs: number;
@@ -105,6 +106,7 @@ export function guardedFetch(target: string, opts: GuardedFetchOptions): Promise
             status,
             headers,
             body: Buffer.concat(chunks).toString("utf8"),
+            bodyBytes: Buffer.concat(chunks),
             finalUrl: target,
             redirectedTo,
             elapsedMs: Date.now() - started,

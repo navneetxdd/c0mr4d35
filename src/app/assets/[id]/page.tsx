@@ -23,7 +23,7 @@ export default async function AssetPage({
       assetView={detail.assetView}
       scans={detail.scans}
       findings={detail.findings}
-      baselineHtml={detail.baselineHtml}
+      evidence={detail.evidence}
       aiVerdict={detail.aiVerdict}
       isAnalyst={shell.isAnalyst}
     />

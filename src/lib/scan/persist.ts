@@ -3,7 +3,14 @@ import { getAiVerdict } from "@/lib/ai/gemini";
 import { dispatchDiscordAlert } from "@/lib/alerts/discord";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runScan, type ScanResult } from "@/lib/scan";
-import type { ScanFinding } from "@/lib/scan/risk";
+import {
+  aggregatePosture,
+  countBySeverity,
+  dedupeFindings,
+  postureScore,
+  type ScanFinding,
+} from "@/lib/scan/risk";
+import { collectScanEvidence } from "@/lib/scan/evidence";
 
 const HTML_CAP = 500_000;
 
@@ -137,7 +144,7 @@ export async function executeScanForAsset(opts: ExecuteScanOptions): Promise<Exe
 
   const { data: baseline } = await admin
     .from("baselines")
-    .select("html_snapshot, signals")
+    .select("html_snapshot, signals, screenshot_path, favicon_hash")
     .eq("asset_id", opts.assetId)
     .order("established_at", { ascending: false })
     .limit(1)
@@ -187,6 +194,37 @@ export async function executeScanForAsset(opts: ExecuteScanOptions): Promise<Exe
     return { scanId, ok: false, error: scan.error ?? "Scan failed" };
   }
 
+  const evidence = await collectScanEvidence({
+    admin,
+    storageBasePath: `assets/${opts.assetId}/scans/${scanId}`,
+    targetUrl: scan.target,
+    html: scan.html,
+    baseline: baseline
+      ? {
+          screenshotPath: baseline.screenshot_path as string | null,
+          faviconHash: baseline.favicon_hash as string | null,
+        }
+      : null,
+  });
+
+  const mergedFindings = dedupeFindings([...scan.findings, ...evidence.extraFindings]);
+  scan.findings = mergedFindings;
+  scan.posture = aggregatePosture(mergedFindings);
+  scan.postureScore = postureScore(mergedFindings);
+  scan.severityCounts = countBySeverity(mergedFindings);
+  scan.visualDriftPct = evidence.visualDriftPct;
+  scan.screenshotPath = evidence.screenshotPath;
+  scan.baselineScreenshotPath = evidence.baselineScreenshotPath;
+  scan.diffPath = evidence.diffPath;
+  scan.screenshotUrl = evidence.screenshotUrl;
+  scan.baselineScreenshotUrl = evidence.baselineScreenshotUrl;
+  scan.diffUrl = evidence.diffUrl;
+  scan.faviconHash = evidence.faviconHash;
+  scan.faviconChanged = evidence.faviconChanged;
+  scan.faviconUrl = evidence.faviconUrl;
+  scan.baselineState = baseline ? "reused" : "created";
+  scan.evidenceNotes = evidence.notes;
+
   const verdict = opts.withAi !== false ? await getAiVerdict(scan) : null;
 
   await admin
@@ -200,22 +238,33 @@ export async function executeScanForAsset(opts: ExecuteScanOptions): Promise<Exe
       pages_scanned: scan.pagesScanned,
       tech_stack: scan.techStack,
       severity_counts: scan.severityCounts,
-      signals: scan.signals,
+      signals: { ...scan.signals, evidenceNotes: scan.evidenceNotes ?? [] },
       ai_verdict: verdict ?? null,
       dom_hash: scan.domHash,
+      screenshot_path: scan.screenshotPath ?? null,
+      diff_path: scan.diffPath ?? null,
+      visual_drift_pct: scan.visualDriftPct ?? null,
+      favicon_hash: scan.faviconHash ?? null,
+      favicon_changed: scan.faviconChanged ?? false,
       finished_at: new Date().toISOString(),
     })
     .eq("id", scanId);
 
   await persistFindings(admin, scanId, opts.assetId, scan.findings);
 
-  const shouldBaseline = opts.establishBaseline || !baseline;
+  const shouldBaseline =
+    opts.establishBaseline ||
+    !baseline ||
+    !baseline.screenshot_path ||
+    !baseline.favicon_hash;
   if (shouldBaseline && scan.html) {
     await admin.from("baselines").insert({
       asset_id: opts.assetId,
       dom_hash: scan.domHash,
       signals: scan.signals,
+      screenshot_path: scan.screenshotPath ?? null,
       html_snapshot: truncateHtml(scan.html),
+      favicon_hash: scan.faviconHash ?? null,
       established_by: opts.userId ?? null,
     });
   }

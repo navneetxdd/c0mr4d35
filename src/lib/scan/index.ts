@@ -62,6 +62,18 @@ export interface ScanResult {
   signals: ScanSignals;
   findings: ScanFinding[];
   html: string;
+  visualDriftPct?: number | null;
+  screenshotPath?: string | null;
+  baselineScreenshotPath?: string | null;
+  diffPath?: string | null;
+  screenshotUrl?: string | null;
+  baselineScreenshotUrl?: string | null;
+  diffUrl?: string | null;
+  faviconHash?: string | null;
+  faviconChanged?: boolean;
+  faviconUrl?: string | null;
+  baselineState?: "created" | "reused" | "provided" | "none";
+  evidenceNotes?: string[];
   error?: string;
 }
 
@@ -108,10 +120,16 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
   let hasPasswordInput = false;
 
   const perPage = await Promise.allSettled(
-    crawlResult.pages.map(async (p) => {
+    crawlResult.pages.map(async (p, index) => {
       const pageFindings: ScanFinding[] = [];
-      pageFindings.push(...auditHeaders(p.headers, p.url));
-      pageFindings.push(...auditCookies(p.headers["set-cookie"], isHttps, p.url));
+      // Evaluate response headers/cookies only on the entry page. Crawled pages
+      // often vary in caching/CDN behavior and otherwise drown the scan in
+      // generic-looking findings that do not describe the target's primary
+      // surface accurately.
+      if (index === 0) {
+        pageFindings.push(...auditHeaders(p.headers, p.url));
+        pageFindings.push(...auditCookies(p.headers["set-cookie"], isHttps, p.url));
+      }
       pageFindings.push(...(await analyzeContent(p.body, p.url, resolved).catch(() => [])));
       const sig = extractSignals(p.body, p.url);
       return { pageFindings, sig };
@@ -255,6 +273,18 @@ function emptyResult(target: string, host: string, scannedAt: string, elapsedMs:
     signals: { externalScriptOrigins: [], formActions: [], hasPasswordInput: false },
     findings: [],
     html: "",
+    visualDriftPct: null,
+    screenshotPath: null,
+    baselineScreenshotPath: null,
+    diffPath: null,
+    screenshotUrl: null,
+    baselineScreenshotUrl: null,
+    diffUrl: null,
+    faviconHash: null,
+    faviconChanged: false,
+    faviconUrl: null,
+    baselineState: "none",
+    evidenceNotes: [],
     error,
   };
 }

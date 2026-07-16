@@ -44,3 +44,6 @@ next-env.d.ts
 
 # internal planning docs (not part of the deliverable)
 UI-BUILD-PROMPT.md
+
+.vercel
+.env*

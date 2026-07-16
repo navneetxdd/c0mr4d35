@@ -13,7 +13,7 @@ import { StatusPill } from "@/components/ui/StatusPill";
 import { useToast } from "@/components/ui/Toast";
 import { rebaselineAsset, triggerAssetScan } from "@/app/actions/datum";
 import type { ShellContext } from "@/lib/data/shell";
-import type { Asset, Finding, ScanEntry } from "@/lib/types";
+import type { Asset, Finding, ScanEntry, VisualEvidence } from "@/lib/types";
 import type { AiVerdict } from "@/lib/ai/gemini";
 import { cn } from "@/lib/format";
 
@@ -22,7 +22,7 @@ interface AssetDetailClientProps {
   assetView: Asset;
   scans: ScanEntry[];
   findings: Finding[];
-  baselineHtml: string | null;
+  evidence: VisualEvidence;
   aiVerdict: AiVerdict | null;
   isAnalyst: boolean;
 }
@@ -32,7 +32,7 @@ export function AssetDetailClient({
   assetView,
   scans,
   findings,
-  baselineHtml,
+  evidence,
   aiVerdict,
   isAnalyst,
 }: AssetDetailClientProps) {
@@ -150,7 +150,7 @@ export function AssetDetailClient({
 
       <div className="grid gap-4 lg:grid-cols-[1.55fr_0.85fr]">
         <div className="flex flex-col gap-4">
-          <DomDriftPanel driftPct={assetView.driftScore} baselineHtml={baselineHtml} />
+          <DomDriftPanel evidence={evidence} />
           <ScanHistory entries={history} selectedId={selectedId} onSelect={setSelectedId} />
         </div>
         <div className="flex flex-col gap-4">
