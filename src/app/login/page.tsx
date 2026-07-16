@@ -1,18 +1,53 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { RegistrationMarks } from "@/components/ui/RegistrationMarks";
 import { BUILD_HASH } from "@/lib/fixtures";
+import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!email.includes("@") || password.length < 6) {
+      setError("Enter a valid email and a password of at least 6 characters");
+      return;
+    }
+    setLoading(true);
+    try {
+      const supabase = createClient();
+      const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
+      if (authError) {
+        setError("Invalid credentials");
+        setLoading(false);
+        return;
+      }
+      const next = searchParams.get("next") || "/";
+      router.push(next.startsWith("/") ? next : "/");
+      router.refresh();
+    } catch {
+      setError("Sign-in is unavailable — check the server configuration");
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="grid min-h-[100dvh] lg:grid-cols-[2fr_3fr]">
@@ -42,22 +77,7 @@ export default function LoginPage() {
 
       <section className="relative flex items-center bg-carbon px-6 py-12 sm:px-12">
         <RegistrationMarks />
-        <form
-          className="relative w-full max-w-md space-y-5"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setError(null);
-            if (!email.includes("@") || password.length < 6) {
-              setError("Invalid credentials");
-              return;
-            }
-            setLoading(true);
-            window.setTimeout(() => {
-              setLoading(false);
-              router.push("/");
-            }, 600);
-          }}
-        >
+        <form className="relative w-full max-w-md space-y-5" onSubmit={handleSubmit}>
           <div>
             <p className="type-label">Authenticate</p>
             <h1 className="mt-2 type-h1 text-text">Sign in</h1>

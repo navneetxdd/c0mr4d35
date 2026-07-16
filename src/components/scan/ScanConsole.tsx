@@ -28,7 +28,19 @@ const riskTone: Record<Risk, "critical" | "watch" | "scan" | "secure" | "neutral
   info: "neutral",
 };
 
-const CATEGORY_ORDER = ["DEFACEMENT", "HEADERS", "TLS", "EXPOSED PATHS", "CVE"] as const;
+const CATEGORY_ORDER = [
+  "DEFACEMENT",
+  "BEHAVIOR",
+  "HEADERS",
+  "COOKIES",
+  "CORS",
+  "CONTENT",
+  "METHODS",
+  "TLS",
+  "DNS",
+  "EXPOSED PATHS",
+  "CVE",
+] as const;
 
 export function ScanConsole() {
   const [target, setTarget] = useState("");
@@ -62,9 +74,10 @@ export function ScanConsole() {
         <MonoEyebrow index="00">Assessment engine</MonoEyebrow>
         <h1 className="mt-2 type-h1 text-text">Live scan</h1>
         <p className="mt-2 max-w-2xl type-small text-text-dim">
-          Real assessment — SSRF-guarded fetch, content-drift defacement check, security-header
-          audit, TLS posture, exposed-path probes, and OSV stack-family correlation. AI verdict is
-          fail-open: findings stand even if enrichment is unavailable.
+          Real assessment against the live target — SSRF-guarded fetch, bounded same-origin
+          crawl, content-drift defacement (when a baseline is supplied), header/cookie/TLS/DNS
+          posture, CORS/method probes, exposed-path checks, passive HTML analysis, and OSV
+          stack-family correlation.
         </p>
       </div>
 

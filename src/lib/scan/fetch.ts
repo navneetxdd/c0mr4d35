@@ -44,6 +44,7 @@ export function guardedFetch(target: string, opts: GuardedFetchOptions): Promise
   return new Promise((resolve, reject) => {
     const transport = isHttps ? https : http;
     let settled = false;
+    // eslint-disable-next-line prefer-const -- forward-referenced by done()/killer before assignment
     let req: http.ClientRequest | undefined;
 
     // Single settlement path. Crucially, the deadline calls done() DIRECTLY —
