@@ -49,11 +49,22 @@ function AuthPage() {
         </span>
       </div>
 
-      {/* Viewport-centered stage — grid place-items is more reliable than mx-auto alone */}
-      <div className="relative z-20 grid min-h-[100dvh] w-full place-items-center px-4 py-16">
-        <div className="relative w-full max-w-md">
+      {/* Explicit flex centering — avoid utility-class ambiguity in embedded browsers */}
+      <div
+        className="relative z-20 px-4 py-16"
+        style={{
+          display: "flex",
+          minHeight: "100dvh",
+          width: "100%",
+          alignItems: "center",
+          justifyContent: "center",
+          boxSizing: "border-box",
+        }}
+      >
+        <div className="relative w-full" style={{ maxWidth: "28rem" }}>
           <div
-            className="pointer-events-none absolute left-1/2 top-1/2 z-0 size-[min(92vw,28rem)] -translate-x-1/2 -translate-y-1/2 opacity-45 mix-blend-screen sm:size-[32rem]"
+            className="pointer-events-none absolute left-1/2 top-1/2 z-0 -translate-x-1/2 -translate-y-1/2 opacity-45 mix-blend-screen"
+            style={{ width: "min(92vw, 28rem)", height: "min(92vw, 28rem)" }}
             aria-hidden
           >
             <div className="radar-scope relative h-full w-full">
