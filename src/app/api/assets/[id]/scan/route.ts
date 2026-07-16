@@ -5,6 +5,7 @@ import {
   requireRole,
 } from "@/lib/auth/require";
 import { checkRateLimit } from "@/lib/auth/rate-limit";
+import { createServerSupabase } from "@/lib/supabase/server";
 import { executeScanForAsset } from "@/lib/scan/persist";
 
 export const runtime = "nodejs";
@@ -37,6 +38,15 @@ export async function POST(
   }
 
   const { id } = await ctx.params;
+  const supabase = await createServerSupabase();
+  const { data: asset } = await supabase.from("assets").select("owner").eq("id", id).maybeSingle();
+  if (!asset) {
+    return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
+  }
+  if (profile.role !== "admin" && asset.owner !== profile.id) {
+    return NextResponse.json({ ok: false, error: "Insufficient permissions" }, { status: 403 });
+  }
+
   const result = await executeScanForAsset({
     assetId: id,
     trigger: "manual",

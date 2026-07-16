@@ -5,14 +5,12 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 const PREFIX = "enc:v1:";
 
 /**
- * Derive a 32-byte key from BYOK_ENCRYPTION_SECRET (preferred) or a
- * deploy-only fallback. Never use a public env var here.
+ * Derive a 32-byte key from BYOK_ENCRYPTION_SECRET only.
+ * Never fall back to SUPABASE_SERVICE_ROLE_KEY — rotating the service role
+ * would brick sealed BYOK secrets, and couples two unrelated trust domains.
  */
 function encryptionKey(): Buffer {
-  const secret =
-    process.env.BYOK_ENCRYPTION_SECRET?.trim() ||
-    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
-    "";
+  const secret = process.env.BYOK_ENCRYPTION_SECRET?.trim() || "";
   if (!secret) {
     throw new Error("BYOK encryption secret is not configured");
   }

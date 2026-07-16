@@ -3,10 +3,26 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabase } from "@/lib/supabase/server";
-import { requireRole } from "@/lib/auth/require";
+import { ForbiddenError, requireRole } from "@/lib/auth/require";
+import { checkRateLimit } from "@/lib/auth/rate-limit";
 import { executeScanForAsset } from "@/lib/scan/persist";
-import type { AppRole } from "@/lib/supabase/types";
+import type { AppRole, Profile } from "@/lib/supabase/types";
 
+/** Analyst may only mutate assets they own; admin may touch any. */
+async function requireAssetAccess(profile: Profile, assetId: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createServerSupabase();
+  const { data: asset, error } = await supabase.from("assets").select("owner").eq("id", assetId).maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!asset) return { ok: false, error: "Not found" };
+  if (profile.role !== "admin" && asset.owner !== profile.id) {
+    throw new ForbiddenError();
+  }
+  return { ok: true };
+}
+
+async function enforceScanRateLimit(userId: string): Promise<boolean> {
+  return checkRateLimit(`scan:user:${userId}`, 10, 600);
+}
 export async function createAssetAndBaseline(input: {
   name: string;
   url: string;
@@ -59,6 +75,12 @@ export async function createAssetAndBaseline(input: {
 
 export async function triggerAssetScan(assetId: string) {
   const profile = await requireRole("analyst");
+  if (!(await enforceScanRateLimit(profile.id))) {
+    return { ok: false as const, error: "Rate limit exceeded" };
+  }
+  const access = await requireAssetAccess(profile, assetId);
+  if (!access.ok) return { ok: false as const, error: access.error };
+
   const supabase = await createServerSupabase();
 
   await supabase.from("scan_jobs").insert({
@@ -85,6 +107,12 @@ export async function triggerAssetScan(assetId: string) {
 
 export async function rebaselineAsset(assetId: string) {
   const profile = await requireRole("analyst");
+  if (!(await enforceScanRateLimit(profile.id))) {
+    return { ok: false as const, error: "Rate limit exceeded" };
+  }
+  const access = await requireAssetAccess(profile, assetId);
+  if (!access.ok) return { ok: false as const, error: access.error };
+
   const result = await executeScanForAsset({
     assetId,
     trigger: "manual",
@@ -139,11 +167,15 @@ export async function signOutAction() {
 
 export async function scanAllAssetsAction() {
   const profile = await requireRole("analyst");
+  if (!(await enforceScanRateLimit(profile.id))) {
+    return { ok: false as const, error: "Rate limit exceeded" };
+  }
   const supabase = await createServerSupabase();
-  const { data: assets, error: assetsErr } = await supabase
-    .from("assets")
-    .select("id")
-    .eq("monitoring_enabled", true);
+  let query = supabase.from("assets").select("id").eq("monitoring_enabled", true);
+  if (profile.role !== "admin") {
+    query = query.eq("owner", profile.id);
+  }
+  const { data: assets, error: assetsErr } = await query;
 
   if (assetsErr) {
     return { ok: false as const, error: assetsErr.message };
