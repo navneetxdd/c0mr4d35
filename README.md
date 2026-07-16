@@ -37,9 +37,13 @@ Deploy to Vercel with the environment variables below set in the project dashboa
 
 - **Provider:** Google Gemini
 - **Model:** `gemini-2.5-flash`
-- **Key:** `GEMINI_API_KEY` (server-side only)
-- When the key is missing or the call fails, Datum labels the verdict **AI unavailable** and shows raw engine findings as authoritative.
+- **Key:** set per-user in **Settings → API keys**, or optionally `GEMINI_API_KEY` as deploy fallback (server-side only)
+- **Shodan:** optional per-user / `SHODAN_API_KEY` for host + DNS enrichment; InternetDB ports/CVEs work without a key
+- When Gemini is missing or the call fails, Datum labels the verdict **AI unavailable** and shows raw engine findings as authoritative.
 
+## Posture score (SCORE / 100)
+
+Starts at **100** (clean). Each finding subtracts a severity weight (critical −45, high −20, medium −10, low −4). The number on screen is remaining headroom after penalties — higher is safer. It is **not** uptime, CVE count, or a letter grade.
 ## Stack
 
 Next.js 15 · Supabase (Auth, Postgres, Realtime) · Tailwind 4 · SSRF-guarded Node scan engine · Zod · OSV.dev CVE correlation · Google Gemini BYOK

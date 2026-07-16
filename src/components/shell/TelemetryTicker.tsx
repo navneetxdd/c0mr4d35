@@ -11,8 +11,8 @@ export function TelemetryTicker({ data }: TelemetryTickerProps) {
     `ASSETS ${String(data.assets).padStart(2, "0")}`,
     `SCANS/24H ${data.scans24h}`,
     `OPEN INCIDENTS ${String(data.openIncidents).padStart(2, "0")}`,
-    `MTTD ${data.mttdSec}s`,
-    `UPTIME ${data.uptimePct.toFixed(1)}%`,
+    `MTTD ${data.mttdSec != null ? `${data.mttdSec}s` : "—"}`,
+    `SCAN OK/24H ${data.scanSuccessPct != null ? `${data.scanSuccessPct.toFixed(1)}%` : "—"}`,
   ];
 
   return (

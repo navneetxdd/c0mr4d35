@@ -41,6 +41,25 @@ export async function collectScanEvidence(opts: {
   const extraFindings: ScanFinding[] = [];
 
   const screenshot = await captureScreenshot(opts.targetUrl);
+  // #region agent log
+  fetch("http://127.0.0.1:7781/ingest/1e3609e4-83e2-4af4-abe1-9c10d5bd2172", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "749116" },
+    body: JSON.stringify({
+      sessionId: "749116",
+      runId: "post-fix",
+      hypothesisId: "H-screenshot",
+      location: "evidence.ts:capture",
+      message: "screenshot result",
+      data: {
+        ok: screenshot.ok,
+        err: screenshot.error?.slice(0, 120) ?? null,
+        bytes: screenshot.png?.byteLength ?? 0,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
   let screenshotPath: string | null = null;
   let diffPath: string | null = null;
   let visualDriftPct: number | null = null;

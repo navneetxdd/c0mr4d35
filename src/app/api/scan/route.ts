@@ -34,7 +34,10 @@ const BodySchema = z.object({
   stream: z.boolean().optional().default(true),
 });
 
-async function authorizeAdhoc(): Promise<{ ok: true; canPersist: boolean } | { ok: false; response: NextResponse }> {
+async function authorizeAdhoc(): Promise<
+  | { ok: true; canPersist: boolean; userId: string | null }
+  | { ok: false; response: NextResponse }
+> {
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
     if (process.env.NODE_ENV === "production") {
       return {
@@ -42,7 +45,7 @@ async function authorizeAdhoc(): Promise<{ ok: true; canPersist: boolean } | { o
         response: NextResponse.json({ ok: false, error: "Service unavailable" }, { status: 503 }),
       };
     }
-    return { ok: true, canPersist: false };
+    return { ok: true, canPersist: false, userId: null };
   }
 
   try {
@@ -55,7 +58,7 @@ async function authorizeAdhoc(): Promise<{ ok: true; canPersist: boolean } | { o
         response: NextResponse.json({ ok: false, error: "Rate limit exceeded" }, { status: 429 }),
       };
     }
-    return { ok: true, canPersist: Boolean(profile.id) };
+    return { ok: true, canPersist: Boolean(profile.id), userId: profile.id };
   } catch (e) {
     if (e instanceof UnauthorizedError) {
       return {
@@ -99,7 +102,7 @@ export async function POST(req: NextRequest) {
   const stream = parsed.data.stream !== false;
   if (!stream) {
     try {
-      const payload = await executeAdhocScan(parsed.data, auth.canPersist);
+      const payload = await executeAdhocScan(parsed.data, auth.canPersist, auth.userId);
       if (!payload.ok) {
         return NextResponse.json({ ok: false, error: payload.error }, { status: 422 });
       }
@@ -117,7 +120,7 @@ export async function POST(req: NextRequest) {
       };
 
       try {
-        const payload = await executeAdhocScan(parsed.data, auth.canPersist, (stage) => {
+        const payload = await executeAdhocScan(parsed.data, auth.canPersist, auth.userId, (stage) => {
           send("stage", stage);
         });
         if (!payload.ok) {
@@ -145,14 +148,44 @@ export async function POST(req: NextRequest) {
 async function executeAdhocScan(
   data: z.infer<typeof BodySchema>,
   canPersistAdhoc: boolean,
+  userId: string | null,
   onProgress?: (stage: ScanStageEvent) => void,
 ) {
   const admin = process.env.SUPABASE_SERVICE_ROLE_KEY ? createAdminClient() : null;
+  const { loadByokSecrets } = await import("@/lib/auth/byok");
+  const secrets = userId
+    ? await loadByokSecrets(userId)
+    : {
+        geminiApiKey: process.env.GEMINI_API_KEY?.trim() || null,
+        shodanApiKey: process.env.SHODAN_API_KEY?.trim() || null,
+      };
+
   const explicitBaseline = Boolean(data.baselineHtml || data.baselineBehavior);
   const storedBaseline =
-    admin && canPersistAdhoc && !explicitBaseline
-      ? await loadAdhocBaseline(admin, data.target)
+    admin && canPersistAdhoc && userId && !explicitBaseline
+      ? await loadAdhocBaseline(admin, data.target, userId)
       : null;
+
+  // #region agent log
+  fetch("http://127.0.0.1:7781/ingest/1e3609e4-83e2-4af4-abe1-9c10d5bd2172", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "749116" },
+    body: JSON.stringify({
+      sessionId: "749116",
+      runId: "post-fix",
+      hypothesisId: "H-adhoc",
+      location: "scan/route.ts:baseline",
+      message: "adhoc baseline scope",
+      data: {
+        hasUserId: Boolean(userId),
+        canPersistAdhoc,
+        hasStored: Boolean(storedBaseline),
+        explicitBaseline,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
 
   const storedSignals = (storedBaseline?.signals ?? {}) as {
     externalScriptOrigins?: string[];
@@ -167,6 +200,7 @@ async function executeAdhocScan(
     baselineBehavior: data.baselineBehavior ?? storedSignals ?? null,
     singlePage: data.singlePage,
     onProgress,
+    shodanApiKey: secrets.shodanApiKey,
   });
 
   if (!scan.ok) {
@@ -185,7 +219,7 @@ async function executeAdhocScan(
 
     const evidence = await collectScanEvidence({
       admin,
-      storageBasePath: `adhoc/${targetKeyFromUrl(data.target)}/${Date.now()}`,
+      storageBasePath: `adhoc/${userId ?? "anon"}/${targetKeyFromUrl(data.target)}/${Date.now()}`,
       targetUrl: scan.target,
       html: scan.html,
       baseline: storedBaseline
@@ -213,8 +247,8 @@ async function executeAdhocScan(
     scan.faviconUrl = evidence.faviconUrl;
     evidenceNotes = [...evidenceNotes, ...evidence.notes];
 
-    if (!storedBaseline && !explicitBaseline && canPersistAdhoc) {
-      await saveAdhocBaseline(admin, data.target, {
+    if (!storedBaseline && !explicitBaseline && canPersistAdhoc && userId) {
+      await saveAdhocBaseline(admin, data.target, userId, {
         html_snapshot: scan.html,
         signals: scan.signals as unknown as Record<string, unknown>,
         screenshot_path: evidence.screenshotPath,
@@ -248,7 +282,7 @@ async function executeAdhocScan(
     at: new Date().toISOString(),
   });
 
-  const verdict = data.withAi ? await getAiVerdict(scan) : undefined;
+  const verdict = data.withAi ? await getAiVerdict(scan, secrets.geminiApiKey) : undefined;
   const { html: _html, ...safe } = scan;
   void _html;
 

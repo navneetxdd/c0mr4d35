@@ -168,6 +168,14 @@ export async function executeScanForAsset(opts: ExecuteScanOptions): Promise<Exe
 
   let scan: ScanResult;
   try {
+    const { loadByokSecrets } = await import("@/lib/auth/byok");
+    const secrets = opts.userId
+      ? await loadByokSecrets(opts.userId)
+      : {
+          geminiApiKey: process.env.GEMINI_API_KEY?.trim() || null,
+          shodanApiKey: process.env.SHODAN_API_KEY?.trim() || null,
+        };
+
     scan = await runScan({
       target: asset.url,
       baselineHtml: baseline?.html_snapshot ?? null,
@@ -178,7 +186,110 @@ export async function executeScanForAsset(opts: ExecuteScanOptions): Promise<Exe
         subdomains?: string[];
       }) ?? null,
       singlePage: opts.singlePage ?? false,
+      shodanApiKey: secrets.shodanApiKey,
     });
+
+    if (!scan.ok) {
+      await admin
+        .from("scans")
+        .update({
+          status: "error",
+          error: scan.error ?? "Scan failed",
+          finished_at: new Date().toISOString(),
+        })
+        .eq("id", scanId);
+      return { scanId, ok: false, error: scan.error ?? "Scan failed" };
+    }
+
+    const evidence = await collectScanEvidence({
+      admin,
+      storageBasePath: `assets/${opts.assetId}/scans/${scanId}`,
+      targetUrl: scan.target,
+      html: scan.html,
+      baseline: baseline
+        ? {
+            screenshotPath: baseline.screenshot_path as string | null,
+            faviconHash: baseline.favicon_hash as string | null,
+          }
+        : null,
+    });
+
+    const mergedFindings = dedupeFindings([...scan.findings, ...evidence.extraFindings]);
+    scan.findings = mergedFindings;
+    scan.posture = aggregatePosture(mergedFindings);
+    scan.postureScore = postureScore(mergedFindings);
+    scan.severityCounts = countBySeverity(mergedFindings);
+    scan.visualDriftPct = evidence.visualDriftPct;
+    scan.screenshotPath = evidence.screenshotPath;
+    scan.baselineScreenshotPath = evidence.baselineScreenshotPath;
+    scan.diffPath = evidence.diffPath;
+    scan.screenshotUrl = evidence.screenshotUrl;
+    scan.baselineScreenshotUrl = evidence.baselineScreenshotUrl;
+    scan.diffUrl = evidence.diffUrl;
+    scan.faviconHash = evidence.faviconHash;
+    scan.faviconChanged = evidence.faviconChanged;
+    scan.faviconUrl = evidence.faviconUrl;
+    scan.baselineState = baseline ? "reused" : "created";
+    scan.evidenceNotes = evidence.notes;
+
+    const verdict = opts.withAi !== false ? await getAiVerdict(scan, secrets.geminiApiKey) : null;
+
+    await admin
+      .from("scans")
+      .update({
+        status: "done",
+        http_status: scan.httpStatus,
+        posture: scan.posture,
+        posture_score: scan.postureScore,
+        drift_pct: scan.driftPct,
+        pages_scanned: scan.pagesScanned,
+        tech_stack: scan.techStack,
+        severity_counts: scan.severityCounts,
+        signals: { ...scan.signals, evidenceNotes: scan.evidenceNotes ?? [] },
+        ai_verdict: verdict ?? null,
+        dom_hash: scan.domHash,
+        screenshot_path: scan.screenshotPath ?? null,
+        diff_path: scan.diffPath ?? null,
+        visual_drift_pct: scan.visualDriftPct ?? null,
+        favicon_hash: scan.faviconHash ?? null,
+        favicon_changed: scan.faviconChanged ?? false,
+        ports_json: scan.ports ?? [],
+        subdomains_json: scan.subdomains ?? [],
+        finished_at: new Date().toISOString(),
+      })
+      .eq("id", scanId);
+
+    await persistFindings(admin, scanId, opts.assetId, scan.findings);
+
+    const shouldBaseline =
+      opts.establishBaseline ||
+      !baseline ||
+      !baseline.screenshot_path ||
+      !baseline.favicon_hash;
+    if (shouldBaseline && scan.html) {
+      await admin.from("baselines").insert({
+        asset_id: opts.assetId,
+        dom_hash: scan.domHash,
+        signals: {
+          ...scan.signals,
+          openPorts: scan.signals.openPorts,
+          subdomains: scan.signals.subdomains,
+        },
+        screenshot_path: scan.screenshotPath ?? null,
+        html_snapshot: truncateHtml(scan.html),
+        favicon_hash: scan.faviconHash ?? null,
+        established_by: opts.userId ?? null,
+      });
+    }
+
+    await admin
+      .from("assets")
+      .update({ last_scanned_at: new Date().toISOString() })
+      .eq("id", opts.assetId);
+
+    await maybeAlert(admin, opts.assetId, scanId, asset.name, scan);
+
+    return { scanId, ok: true };
   } catch {
     await admin
       .from("scans")
@@ -186,110 +297,7 @@ export async function executeScanForAsset(opts: ExecuteScanOptions): Promise<Exe
       .eq("id", scanId);
     return { scanId, ok: false, error: "Scan engine failure" };
   }
-
-  if (!scan.ok) {
-    await admin
-      .from("scans")
-      .update({
-        status: "error",
-        error: scan.error ?? "Scan failed",
-        finished_at: new Date().toISOString(),
-      })
-      .eq("id", scanId);
-    return { scanId, ok: false, error: scan.error ?? "Scan failed" };
-  }
-
-  const evidence = await collectScanEvidence({
-    admin,
-    storageBasePath: `assets/${opts.assetId}/scans/${scanId}`,
-    targetUrl: scan.target,
-    html: scan.html,
-    baseline: baseline
-      ? {
-          screenshotPath: baseline.screenshot_path as string | null,
-          faviconHash: baseline.favicon_hash as string | null,
-        }
-      : null,
-  });
-
-  const mergedFindings = dedupeFindings([...scan.findings, ...evidence.extraFindings]);
-  scan.findings = mergedFindings;
-  scan.posture = aggregatePosture(mergedFindings);
-  scan.postureScore = postureScore(mergedFindings);
-  scan.severityCounts = countBySeverity(mergedFindings);
-  scan.visualDriftPct = evidence.visualDriftPct;
-  scan.screenshotPath = evidence.screenshotPath;
-  scan.baselineScreenshotPath = evidence.baselineScreenshotPath;
-  scan.diffPath = evidence.diffPath;
-  scan.screenshotUrl = evidence.screenshotUrl;
-  scan.baselineScreenshotUrl = evidence.baselineScreenshotUrl;
-  scan.diffUrl = evidence.diffUrl;
-  scan.faviconHash = evidence.faviconHash;
-  scan.faviconChanged = evidence.faviconChanged;
-  scan.faviconUrl = evidence.faviconUrl;
-  scan.baselineState = baseline ? "reused" : "created";
-  scan.evidenceNotes = evidence.notes;
-
-  const verdict = opts.withAi !== false ? await getAiVerdict(scan) : null;
-
-  await admin
-    .from("scans")
-    .update({
-      status: "done",
-      http_status: scan.httpStatus,
-      posture: scan.posture,
-      posture_score: scan.postureScore,
-      drift_pct: scan.driftPct,
-      pages_scanned: scan.pagesScanned,
-      tech_stack: scan.techStack,
-      severity_counts: scan.severityCounts,
-      signals: { ...scan.signals, evidenceNotes: scan.evidenceNotes ?? [] },
-      ai_verdict: verdict ?? null,
-      dom_hash: scan.domHash,
-      screenshot_path: scan.screenshotPath ?? null,
-      diff_path: scan.diffPath ?? null,
-      visual_drift_pct: scan.visualDriftPct ?? null,
-      favicon_hash: scan.faviconHash ?? null,
-      favicon_changed: scan.faviconChanged ?? false,
-      ports_json: scan.ports ?? [],
-      subdomains_json: scan.subdomains ?? [],
-      finished_at: new Date().toISOString(),
-    })
-    .eq("id", scanId);
-
-  await persistFindings(admin, scanId, opts.assetId, scan.findings);
-
-  const shouldBaseline =
-    opts.establishBaseline ||
-    !baseline ||
-    !baseline.screenshot_path ||
-    !baseline.favicon_hash;
-  if (shouldBaseline && scan.html) {
-    await admin.from("baselines").insert({
-      asset_id: opts.assetId,
-      dom_hash: scan.domHash,
-      signals: {
-        ...scan.signals,
-        openPorts: scan.signals.openPorts,
-        subdomains: scan.signals.subdomains,
-      },
-      screenshot_path: scan.screenshotPath ?? null,
-      html_snapshot: truncateHtml(scan.html),
-      favicon_hash: scan.faviconHash ?? null,
-      established_by: opts.userId ?? null,
-    });
-  }
-
-  await admin
-    .from("assets")
-    .update({ last_scanned_at: new Date().toISOString() })
-    .eq("id", opts.assetId);
-
-  await maybeAlert(admin, opts.assetId, scanId, asset.name, scan);
-
-  return { scanId, ok: true };
 }
-
 /** Processes pending scan_jobs rows (leased atomically). */
 export async function drainScanJobs(limit = 5): Promise<number> {
   const admin = createAdminClient();

@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface AdhocBaselineRow {
+  user_id: string;
   target_key: string;
   target_url: string;
   html_snapshot: string | null;
@@ -35,11 +36,13 @@ export function targetKeyFromUrl(raw: string): string {
 export async function loadAdhocBaseline(
   admin: SupabaseClient,
   rawTarget: string,
+  userId: string,
 ): Promise<AdhocBaselineRow | null> {
   const targetKey = targetKeyFromUrl(rawTarget);
   const { data } = await admin
     .from("adhoc_baselines")
-    .select("target_key,target_url,html_snapshot,signals,screenshot_path,favicon_hash")
+    .select("user_id,target_key,target_url,html_snapshot,signals,screenshot_path,favicon_hash")
+    .eq("user_id", userId)
     .eq("target_key", targetKey)
     .maybeSingle();
   return (data as AdhocBaselineRow | null) ?? null;
@@ -48,7 +51,8 @@ export async function loadAdhocBaseline(
 export async function saveAdhocBaseline(
   admin: SupabaseClient,
   rawTarget: string,
-  values: Omit<AdhocBaselineRow, "target_key" | "target_url">,
+  userId: string,
+  values: Omit<AdhocBaselineRow, "user_id" | "target_key" | "target_url">,
 ): Promise<AdhocBaselineRow> {
   const target_url = normalizeTargetUrl(rawTarget);
   const target_key = targetKeyFromUrl(rawTarget);
@@ -56,6 +60,7 @@ export async function saveAdhocBaseline(
     .from("adhoc_baselines")
     .upsert(
       {
+        user_id: userId,
         target_key,
         target_url,
         html_snapshot: values.html_snapshot,
@@ -63,9 +68,9 @@ export async function saveAdhocBaseline(
         screenshot_path: values.screenshot_path,
         favicon_hash: values.favicon_hash,
       },
-      { onConflict: "target_key" },
+      { onConflict: "user_id,target_key" },
     )
-    .select("target_key,target_url,html_snapshot,signals,screenshot_path,favicon_hash")
+    .select("user_id,target_key,target_url,html_snapshot,signals,screenshot_path,favicon_hash")
     .single();
   if (error || !data) throw new Error(error?.message ?? "Could not save ad-hoc baseline");
   return data as AdhocBaselineRow;

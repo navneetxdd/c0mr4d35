@@ -59,15 +59,75 @@ export function isPublicIpv4(address: string): boolean {
   return true;
 }
 
+function hextetsToIpv4(hi: string, lo: string): string | null {
+  const h = Number.parseInt(hi, 16);
+  const l = Number.parseInt(lo, 16);
+  if (!Number.isFinite(h) || !Number.isFinite(l) || h < 0 || l < 0 || h > 0xffff || l > 0xffff) {
+    return null;
+  }
+  return `${(h >> 8) & 255}.${h & 255}.${(l >> 8) & 255}.${l & 255}`;
+}
+
+/** Expand a sparse IPv6 literal to 8 hextets (best-effort). */
+function expandIpv6(address: string): string[] | null {
+  const raw = address.toLowerCase().split("%")[0]?.replace(/^\[|\]$/g, "") ?? "";
+  if (!raw.includes(":")) return null;
+  const [head, tail] = raw.split("::");
+  const headParts = head ? head.split(":").filter(Boolean) : [];
+  const tailParts = tail ? tail.split(":").filter(Boolean) : [];
+  if (raw.includes("::")) {
+    const missing = 8 - headParts.length - tailParts.length;
+    if (missing < 0) return null;
+    return [...headParts, ...Array(missing).fill("0"), ...tailParts];
+  }
+  const parts = raw.split(":");
+  return parts.length === 8 ? parts : null;
+}
+
+/**
+ * Pull an embedded IPv4 out of IPv4-mapped, NAT64, or 6to4 forms.
+ * Dotted (::ffff:127.0.0.1) and hex (::ffff:7f00:1) both matter — attackers
+ * use the hex form to bypass naive dotted-only checks.
+ */
+function embeddedIpv4FromIpv6(address: string): string | null {
+  const addr = address.toLowerCase().split("%")[0]?.replace(/^\[|\]$/g, "") ?? "";
+
+  const dotted = addr.match(/:ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
+  if (dotted?.[1]) return dotted[1];
+
+  const hexMapped = addr.match(/:ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
+  if (hexMapped?.[1] && hexMapped[2]) return hextetsToIpv4(hexMapped[1], hexMapped[2]);
+
+  // 6to4 2002:V4:/48 — next 32 bits are the IPv4
+  const sixToFour = addr.match(/^2002:([0-9a-f]{1,4}):([0-9a-f]{1,4})/i);
+  if (sixToFour?.[1] && sixToFour[2]) return hextetsToIpv4(sixToFour[1], sixToFour[2]);
+
+  // NAT64 well-known prefix 64:ff9b::/96 — last 32 bits are IPv4
+  if (addr.startsWith("64:ff9b:") || addr.startsWith("64:ff9b::")) {
+    const parts = expandIpv6(addr);
+    if (parts && parts.length === 8) {
+      return hextetsToIpv4(parts[6]!, parts[7]!);
+    }
+  }
+
+  return null;
+}
+
 function isPublicIpv6(address: string): boolean {
-  const addr = address.toLowerCase().split("%")[0] ?? "";
+  const addr = address.toLowerCase().split("%")[0]?.replace(/^\[|\]$/g, "") ?? "";
   if (addr === "::1" || addr === "::") return false; // loopback / unspecified
-  if (addr.startsWith("fe80")) return false; // link-local
-  if (addr.startsWith("fc") || addr.startsWith("fd")) return false; // unique-local
-  if (addr.startsWith("ff")) return false; // multicast
-  // IPv4-mapped (::ffff:a.b.c.d) — validate the embedded v4 address.
-  const mapped = addr.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped && mapped[1]) return isPublicIpv4(mapped[1]);
+  // fe80::/10 link-local (fe80–febf)
+  if (/^fe[89ab][0-9a-f]:/i.test(addr) || addr.startsWith("fe80:")) return false;
+  // fec0::/10 deprecated site-local (fec0–feff)
+  if (/^fe[cdef][0-9a-f]:/i.test(addr)) return false;
+  // fc00::/7 unique-local
+  if (/^f[cd][0-9a-f]{2}:/i.test(addr)) return false;
+  // ff00::/8 multicast
+  if (/^ff[0-9a-f]{2}:/i.test(addr)) return false;
+
+  const embedded = embeddedIpv4FromIpv6(addr);
+  if (embedded) return isPublicIpv4(embedded);
+
   return true;
 }
 

@@ -141,18 +141,42 @@ export async function fetchTelemetry(): Promise<Telemetry> {
   const supabase = await createServerSupabase();
   const since = new Date(Date.now() - 86_400_000).toISOString();
 
-  const [{ count: assetCount }, { count: scans24 }, { count: openIncidents }] = await Promise.all([
+  const [
+    { count: assetCount },
+    { count: scans24 },
+    { count: openIncidents },
+    { count: scansOk24 },
+    { data: mttdRows },
+  ] = await Promise.all([
     supabase.from("assets").select("*", { count: "exact", head: true }),
     supabase.from("scans").select("*", { count: "exact", head: true }).gte("started_at", since),
     supabase.from("incidents").select("*", { count: "exact", head: true }).eq("status", "open"),
+    supabase
+      .from("scans")
+      .select("*", { count: "exact", head: true })
+      .gte("started_at", since)
+      .eq("status", "done"),
+    supabase.from("incidents").select("mttd_sec").not("mttd_sec", "is", null).gt("mttd_sec", 0).limit(100),
   ]);
+
+  const mttdSamples = (mttdRows ?? [])
+    .map((r) => (typeof r.mttd_sec === "number" ? r.mttd_sec : null))
+    .filter((n): n is number => n != null && n > 0);
+  const mttdSec =
+    mttdSamples.length > 0
+      ? Math.round(mttdSamples.reduce((a, b) => a + b, 0) / mttdSamples.length)
+      : null;
+
+  const total = scans24 ?? 0;
+  const ok = scansOk24 ?? 0;
+  const scanSuccessPct = total === 0 ? null : Math.round((ok / total) * 1000) / 10;
 
   return {
     assets: assetCount ?? 0,
-    scans24h: scans24 ?? 0,
+    scans24h: total,
     openIncidents: openIncidents ?? 0,
-    mttdSec: 0,
-    uptimePct: 99.9,
+    mttdSec,
+    scanSuccessPct,
   };
 }
 

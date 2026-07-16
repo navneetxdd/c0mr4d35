@@ -74,6 +74,21 @@ export function postureScore(findings: ScanFinding[]): number {
   return Math.max(0, Math.round(100 - Math.min(95, penalty)));
 }
 
+/**
+ * Human explanation of SCORE/100. Higher = safer.
+ * Example: 30/100 means findings subtracted ~70 points of headroom from a clean 100.
+ */
+export function explainPostureScore(score: number, findings: ScanFinding[]): string {
+  const counts = countBySeverity(findings);
+  const parts: string[] = [];
+  if (counts.critical) parts.push(`${counts.critical} critical (−${RISK_WEIGHT.critical} ea)`);
+  if (counts.high) parts.push(`${counts.high} high (−${RISK_WEIGHT.high} ea)`);
+  if (counts.medium) parts.push(`${counts.medium} medium (−${RISK_WEIGHT.medium} ea)`);
+  if (counts.low) parts.push(`${counts.low} low (−${RISK_WEIGHT.low} ea)`);
+  const breakdown = parts.length ? parts.join(", ") : "no scored findings";
+  return `${score}/100 security posture (100 = clean). Starts at 100; subtracts ${breakdown}. Remaining headroom after penalties — not a CVE count or uptime metric.`;
+}
+
 /** Stable severity-first sort for presentation. */
 export function sortFindings(findings: ScanFinding[]): ScanFinding[] {
   return [...findings].sort((a, b) => RISK_ORDER[a.risk] - RISK_ORDER[b.risk]);

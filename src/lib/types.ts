@@ -147,6 +147,8 @@ export interface Telemetry {
   assets: number;
   scans24h: number;
   openIncidents: number;
-  mttdSec: number;
-  uptimePct: number;
+  /** Average MTTD from incidents that recorded one; null when no samples. */
+  mttdSec: number | null;
+  /** Successful scans / total scans in last 24h; null when no scans yet. */
+  scanSuccessPct: number | null;
 }

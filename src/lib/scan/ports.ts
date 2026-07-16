@@ -1,7 +1,7 @@
 import { Socket } from "node:net";
 import type { ScanFinding } from "./risk";
 
-/** Curated nmap-style top ports suitable for a bounded serverless budget. */
+/** Curated high-value ports for a bounded serverless TCP probe (not a full nmap sweep). */
 export const TOP_PORTS = [
   21, 22, 25, 53, 80, 110, 143, 443, 445, 465, 587, 993, 995, 1433, 3306, 3389, 5432, 5900, 6379,
   8080, 8443, 27017,

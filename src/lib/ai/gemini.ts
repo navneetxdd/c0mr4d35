@@ -69,9 +69,9 @@ function buildPrompt(scan: ScanResult): string {
   ].join("\n");
 }
 
-export async function getAiVerdict(scan: ScanResult): Promise<AiVerdict> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return heuristicFallback(scan, "GEMINI_API_KEY not configured");
+export async function getAiVerdict(scan: ScanResult, apiKeyOverride?: string | null): Promise<AiVerdict> {
+  const apiKey = apiKeyOverride?.trim() || process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) return heuristicFallback(scan, "Gemini API key not configured — add one in Settings");
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);

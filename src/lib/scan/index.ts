@@ -26,6 +26,7 @@ import {
   subdomainChangeFindings,
   type SubdomainResult,
 } from "./subdomains";
+import { lookupInternetDb, lookupShodanHost } from "./shodan";
 
 export interface BehaviorBaseline {
   externalScriptOrigins?: string[];
@@ -43,6 +44,8 @@ export interface ScanInput {
   singlePage?: boolean;
   /** Optional stage reporter for progress UI / SSE. */
   onProgress?: ProgressSink;
+  /** Optional Shodan API key (BYOK) for host/DNS enrichment. */
+  shodanApiKey?: string | null;
 }
 
 export interface ScanSignals {
@@ -226,34 +229,96 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
     const portProbe = await probePorts(resolved.address || resolved.hostname);
     ports = portProbe.results;
     findings.push(...portProbe.findings);
+    evidenceNotes.push(...portProbe.notes);
+
+    const idb = await lookupInternetDb(resolved.address);
+    evidenceNotes.push(...idb.notes);
+    findings.push(...idb.findings);
+    const internetDbHostnames = [...(idb.record?.hostnames ?? [])];
+    if (idb.record?.ports.length) {
+      const seen = new Set(ports.map((p) => p.port));
+      const now = new Date().toISOString();
+      for (const port of idb.record.ports) {
+        if (seen.has(port)) continue;
+        ports.push({ port, state: "open", rttMs: 0, probedAt: now });
+        seen.add(port);
+      }
+      evidenceNotes.push(
+        `Merged ${idb.record.ports.length} InternetDB port(s) into open-port set (indexed, not live TCP).`,
+      );
+    }
+
+    if (input.shodanApiKey?.trim()) {
+      const shodanHost = await lookupShodanHost(resolved.address, input.shodanApiKey);
+      evidenceNotes.push(...shodanHost.notes);
+      findings.push(...shodanHost.findings);
+      if (shodanHost.record?.ports.length) {
+        const seen = new Set(ports.map((p) => p.port));
+        const now = new Date().toISOString();
+        for (const port of shodanHost.record.ports) {
+          if (seen.has(port)) continue;
+          ports.push({ port, state: "open", rttMs: 0, probedAt: now });
+          seen.add(port);
+        }
+      }
+      for (const host of shodanHost.record?.hostnames ?? []) {
+        if (!internetDbHostnames.includes(host)) internetDbHostnames.push(host);
+      }
+    } else {
+      evidenceNotes.push(
+        "Shodan host API skipped — add a Shodan key in Settings for full banner/CVE enrichment.",
+      );
+    }
+
     findings.push(
       ...portChangeFindings(resolved.hostname, input.baselineBehavior?.openPorts, ports),
     );
-    evidenceNotes.push(...portProbe.notes);
     await report(
       "ports",
-      "Completed TCP port probe",
+      "Completed TCP + Shodan/InternetDB port recon",
       `${ports.filter((p) => p.state === "open").length} open`,
     );
+
+    try {
+      const subProbe = await discoverSubdomains(resolved.hostname, {
+        shodanApiKey: input.shodanApiKey,
+        extraHostnames: internetDbHostnames,
+      });
+      subdomains = subProbe.results;
+      findings.push(...subProbe.findings);
+      findings.push(...subdomainChangeFindings(input.baselineBehavior?.subdomains, subdomains));
+      evidenceNotes.push(...subProbe.notes);
+      await report(
+        "subdomains",
+        "Completed CT/Shodan/InternetDB subdomain discovery",
+        `${subdomains.length} names`,
+      );
+    } catch (error) {
+      evidenceNotes.push(
+        `Subdomain discovery skipped: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+      await report("subdomains", "Subdomain discovery unavailable");
+    }
   } catch (error) {
     evidenceNotes.push(
       `Port probe skipped: ${error instanceof Error ? error.message : "unknown error"}`,
     );
     await report("ports", "Port probe unavailable");
-  }
-
-  try {
-    const subProbe = await discoverSubdomains(resolved.hostname);
-    subdomains = subProbe.results;
-    findings.push(...subProbe.findings);
-    findings.push(...subdomainChangeFindings(input.baselineBehavior?.subdomains, subdomains));
-    evidenceNotes.push(...subProbe.notes);
-    await report("subdomains", "Completed subdomain discovery", `${subdomains.length} names`);
-  } catch (error) {
-    evidenceNotes.push(
-      `Subdomain discovery skipped: ${error instanceof Error ? error.message : "unknown error"}`,
-    );
-    await report("subdomains", "Subdomain discovery unavailable");
+    try {
+      const subProbe = await discoverSubdomains(resolved.hostname, {
+        shodanApiKey: input.shodanApiKey,
+      });
+      subdomains = subProbe.results;
+      findings.push(...subProbe.findings);
+      findings.push(...subdomainChangeFindings(input.baselineBehavior?.subdomains, subdomains));
+      evidenceNotes.push(...subProbe.notes);
+      await report("subdomains", "Completed subdomain discovery", `${subdomains.length} names`);
+    } catch (subErr) {
+      evidenceNotes.push(
+        `Subdomain discovery skipped: ${subErr instanceof Error ? subErr.message : "unknown error"}`,
+      );
+      await report("subdomains", "Subdomain discovery unavailable");
+    }
   }
 
   const openPorts = ports.filter((p) => p.state === "open").map((p) => p.port);

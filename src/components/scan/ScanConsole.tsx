@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { AppShell } from "@/components/shell/AppShell";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -12,6 +13,7 @@ import type { ShellContext } from "@/lib/data/shell";
 import type { ScanApiResponse, SafeScanResult } from "@/lib/scan/api-types";
 import type { AiVerdict } from "@/lib/ai/gemini";
 import type { Risk } from "@/lib/scan/risk";
+import { explainPostureScore } from "@/lib/scan/risk";
 import type { ScanStageEvent } from "@/lib/scan/progress";
 import { cn } from "@/lib/format";
 
@@ -150,8 +152,8 @@ export function ScanConsole({ shell, baselineHtml = null }: ScanConsoleProps) {
         <h1 className="mt-2 type-h1 text-text">Live scan</h1>
         <p className="mt-2 max-w-2xl type-small text-text-dim">
           Live probes only — SSRF-guarded fetch, DOM/visual baseline comparison, header/TLS/DNS
-          hygiene, TCP port connects, Certificate Transparency + DNS subdomain discovery. Every
-          finding carries observed evidence; nothing is fixture-driven.
+          hygiene, TCP connects, Shodan/InternetDB ports & CVEs, Certificate Transparency + Shodan
+          DNS subdomain discovery. Every finding carries observed evidence — no wordlist guessing.
         </p>
       </div>
 
@@ -256,6 +258,9 @@ function Results({ scan, verdict }: { scan: SafeScanResult; verdict?: AiVerdict 
               <p className="type-data-sm text-text-faint">SCORE / 100</p>
             </div>
           </div>
+          <p className="mt-3 max-w-3xl font-data text-[11px] leading-relaxed text-text-faint">
+            {explainPostureScore(scan.postureScore, scan.findings)}
+          </p>
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Metric label="HTTP" value={String(scan.httpStatus)} />
             <Metric label="DOM DRIFT" value={`${scan.driftPct}%`} />
@@ -481,6 +486,14 @@ function VerdictPanel({ verdict }: { verdict?: AiVerdict }) {
         <p className="mt-2 type-small text-text-dim">
           {verdict?.error ? `Reason: ${verdict.error}. ` : ""}
           Findings on the left are authoritative — detection does not depend on the AI call.
+        </p>
+        <p className="mt-3">
+          <Link
+            href="/settings#api-keys"
+            className="font-data text-[11px] tracking-[0.06em] text-scan underline hover:text-text"
+          >
+            ADD GEMINI KEY IN SETTINGS →
+          </Link>
         </p>
       </section>
     );

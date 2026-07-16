@@ -1,12 +1,15 @@
 import { AppShell } from "@/components/shell/AppShell";
+import { SettingsByokForm } from "@/components/settings/SettingsByokForm";
 import { MonoEyebrow } from "@/components/ui/MonoEyebrow";
+import { getByokStatus } from "@/lib/auth/byok";
 import { BUILD_HASH } from "@/lib/build";
 import { fetchShellContext } from "@/lib/data/queries";
 
 export default async function SettingsPage() {
   const shell = await fetchShellContext();
-  const supabaseRef = process.env.NEXT_PUBLIC_SUPABASE_URL?.match(/https:\/\/([^.]+)/)?.[1] ?? "not set";
-  const gemini = Boolean(process.env.GEMINI_API_KEY);
+  const byok = await getByokStatus();
+  const supabaseRef =
+    process.env.NEXT_PUBLIC_SUPABASE_URL?.match(/https:\/\/([^.]+)/)?.[1] ?? "not set";
   const discord = Boolean(process.env.DISCORD_WEBHOOK_URL);
   const cron = Boolean(process.env.CRON_SECRET);
 
@@ -14,10 +17,23 @@ export default async function SettingsPage() {
     <AppShell crumbs={[{ label: "SETTINGS" }]} shell={shell}>
       <MonoEyebrow index="16">Workspace</MonoEyebrow>
       <h1 className="mt-2 type-h1 text-text">Settings</h1>
+
+      <SettingsByokForm initial={byok} />
+
       <div className="panel mt-6 divide-y divide-edge">
         <Row label="Supabase project" value={supabaseRef} />
         <Row label="Default scan interval" value="15 min (per asset)" />
-        <Row label="Gemini BYOK" value={gemini ? "configured" : "not configured"} />
+        <Row
+          label="Gemini (effective)"
+          value={
+            byok.geminiConfigured
+              ? "account BYOK"
+              : byok.geminiEnvConfigured
+                ? "deploy env"
+                : "not configured"
+          }
+        />
+        <Row label="Shodan (account)" value={byok.shodanConfigured ? "configured" : "not configured"} />
         <Row label="Discord alerts" value={discord ? "configured" : "not configured"} />
         <Row label="Cron scheduler" value={cron ? "configured" : "not configured"} />
         <Row label="Build" value={BUILD_HASH} />

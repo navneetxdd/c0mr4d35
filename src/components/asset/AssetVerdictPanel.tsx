@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { AiVerdict } from "@/lib/ai/gemini";
 import { MonoEyebrow } from "@/components/ui/MonoEyebrow";
 import { RegistrationMarks } from "@/components/ui/RegistrationMarks";
@@ -27,6 +28,14 @@ export function AssetVerdictPanel({ verdict }: AssetVerdictPanelProps) {
         <p className="mt-2 type-small text-text-dim">
           {verdict?.error ? `Reason: ${verdict.error}. ` : ""}
           Findings below are authoritative — detection does not depend on Gemini.
+        </p>
+        <p className="mt-3">
+          <Link
+            href="/settings#api-keys"
+            className="font-data text-[11px] tracking-[0.06em] text-scan underline hover:text-text"
+          >
+            ADD GEMINI KEY IN SETTINGS →
+          </Link>
         </p>
       </section>
     );

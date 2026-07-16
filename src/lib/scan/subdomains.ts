@@ -1,30 +1,10 @@
 import { lookup } from "node:dns/promises";
 import type { ScanFinding } from "./risk";
-
-const PREFIX_WORDLIST = [
-  "www",
-  "mail",
-  "api",
-  "dev",
-  "staging",
-  "cdn",
-  "app",
-  "admin",
-  "portal",
-  "blog",
-  "shop",
-  "m",
-  "vpn",
-  "git",
-  "status",
-  "docs",
-  "test",
-  "beta",
-] as const;
+import { lookupShodanDomain } from "./shodan";
 
 export interface SubdomainResult {
   subdomain: string;
-  source: "ct" | "wordlist";
+  source: "ct" | "shodan" | "internetdb";
   ips: string[];
   queriedAt: string;
 }
@@ -33,36 +13,47 @@ function registrableDomain(hostname: string): string {
   const host = hostname.toLowerCase().replace(/\.$/, "");
   const parts = host.split(".").filter(Boolean);
   if (parts.length <= 2) return host;
-  return parts.slice(-2).join(".");
+  const multi = new Set(["co.uk", "org.uk", "ac.uk", "com.au", "co.in", "com.br"]);
+  const lastTwo = parts.slice(-2).join(".");
+  const lastThree = parts.slice(-3).join(".");
+  if (parts.length >= 3 && multi.has(lastTwo)) return lastThree;
+  return lastTwo;
 }
 
-async function fetchCtNames(domain: string): Promise<string[]> {
+async function fetchCtNames(domain: string): Promise<{ names: string[]; note: string }> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 6_000);
+  const timer = setTimeout(() => controller.abort(), 10_000);
   try {
     const url = `https://crt.sh/?q=${encodeURIComponent(`%.${domain}`)}&output=json`;
     const res = await fetch(url, {
       signal: controller.signal,
       headers: { accept: "application/json", "user-agent": "DatumScanner/1.0" },
     });
-    if (!res.ok) return [];
+    if (!res.ok) return { names: [], note: `Certificate Transparency HTTP ${res.status}.` };
     const text = await res.text();
-    if (text.length > 1_500_000) return [];
+    if (text.length > 2_500_000) {
+      return { names: [], note: "Certificate Transparency response too large; skipped." };
+    }
     const rows = JSON.parse(text) as Array<{ name_value?: string }>;
     const names = new Set<string>();
-    for (const row of rows.slice(0, 200)) {
+    for (const row of rows) {
       const raw = row.name_value ?? "";
       for (const line of raw.split(/\n+/)) {
         const name = line.trim().toLowerCase().replace(/^\*\./, "");
-        if (!name || name.includes(" ") || !name.endsWith(domain)) continue;
+        if (!name || name.includes(" ")) continue;
+        if (name !== domain && !name.endsWith(`.${domain}`)) continue;
+        if (name === domain) continue;
         names.add(name);
-        if (names.size >= 25) break;
+        if (names.size >= 120) break;
       }
-      if (names.size >= 25) break;
+      if (names.size >= 120) break;
     }
-    return [...names];
+    return {
+      names: [...names],
+      note: `Certificate Transparency (crt.sh) returned ${names.size} unique name(s) for %.${domain}.`,
+    };
   } catch {
-    return [];
+    return { names: [], note: `Certificate Transparency timed out or failed for %.${domain}.` };
   } finally {
     clearTimeout(timer);
   }
@@ -97,28 +88,40 @@ async function mapPool<T, R>(items: T[], concurrency: number, fn: (item: T) => P
 
 export async function discoverSubdomains(
   hostname: string,
+  opts?: { shodanApiKey?: string | null; extraHostnames?: string[] },
 ): Promise<{ results: SubdomainResult[]; findings: ScanFinding[]; notes: string[] }> {
   const domain = registrableDomain(hostname);
   const notes: string[] = [];
+  const findings: ScanFinding[] = [];
   const queriedAt = new Date().toISOString();
-  const candidates = new Map<string, "ct" | "wordlist">();
+  const candidates = new Map<string, SubdomainResult["source"]>();
 
-  const ctNames = await fetchCtNames(domain);
-  notes.push(
-    ctNames.length
-      ? `Certificate Transparency returned ${ctNames.length} name(s) for %.${domain}.`
-      : `Certificate Transparency returned no usable names for %.${domain} (or timed out).`,
-  );
-  for (const name of ctNames) candidates.set(name, "ct");
-  for (const prefix of PREFIX_WORDLIST) {
-    const name = `${prefix}.${domain}`;
-    if (!candidates.has(name)) candidates.set(name, "wordlist");
+  const ct = await fetchCtNames(domain);
+  notes.push(ct.note);
+  for (const name of ct.names) candidates.set(name, "ct");
+
+  if (opts?.shodanApiKey?.trim()) {
+    const shodanDns = await lookupShodanDomain(domain, opts.shodanApiKey);
+    notes.push(...shodanDns.notes);
+    for (const name of shodanDns.subdomains) {
+      if (!candidates.has(name)) candidates.set(name, "shodan");
+    }
+  } else {
+    notes.push(
+      "Shodan DNS domain skipped — add a Shodan API key in Settings for indexed subdomain enumeration.",
+    );
+  }
+
+  for (const host of opts?.extraHostnames ?? []) {
+    const name = host.toLowerCase();
+    if (name === domain || name.endsWith(`.${domain}`)) {
+      if (!candidates.has(name) && name !== domain) candidates.set(name, "internetdb");
+    }
   }
 
   const entries = [...candidates.entries()];
-  const resolved = await mapPool(entries, 8, async ([name, source]) => {
+  const resolved = await mapPool(entries, 10, async ([name, source]) => {
     const ips = await resolveHost(name);
-    if (source === "wordlist" && !ips.length) return null;
     return { subdomain: name, source, ips, queriedAt } satisfies SubdomainResult;
   });
 
@@ -128,10 +131,10 @@ export async function discoverSubdomains(
 
   const withIps = results.filter((r) => r.ips.length > 0);
   notes.push(
-    `Subdomain discovery: ${results.length} candidate(s), ${withIps.length} with DNS A records.`,
+    `Subdomain discovery: ${results.length} observed name(s) from CT/Shodan/InternetDB; ${withIps.length} currently resolve.`,
   );
 
-  return { results, findings: [], notes };
+  return { results, findings, notes };
 }
 
 export function subdomainChangeFindings(

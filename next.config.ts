@@ -26,7 +26,8 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: process.cwd(),
   },
-  serverExternalPackages: ["playwright-core", "@sparticuz/chromium"],
+  // chromium-min has no local bin/; it downloads a remote pack at runtime on Vercel.
+  serverExternalPackages: ["playwright-core", "@sparticuz/chromium-min"],
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },

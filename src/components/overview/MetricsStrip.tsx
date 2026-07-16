@@ -7,7 +7,7 @@ interface MetricsStripProps {
 
 export function MetricsStrip({ data }: MetricsStripProps) {
   const items = [
-    { label: "MTTD", value: `${data.mttdSec}s` },
+    { label: "MTTD", value: data.mttdSec != null ? `${data.mttdSec}s` : "—" },
     { label: "SCANS / 24H", value: String(data.scans24h) },
     { label: "OPEN INCIDENTS", value: String(data.openIncidents).padStart(2, "0") },
   ];
