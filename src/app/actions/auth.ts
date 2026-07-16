@@ -17,8 +17,33 @@ export type AuthActionState = {
 
 const GENERIC_SIGNIN_ERROR = "Invalid email or password";
 const RATE_LIMIT_ERROR = "Too many attempts. Try again later.";
+const EMAIL_NOT_CONFIRMED_ERROR =
+  "Confirm your email before signing in. Check your inbox for the verification link.";
 const SIGNUP_MESSAGE =
   "If this email can be used, check your inbox to confirm your account before signing in.";
+const SIGNUP_UNAVAILABLE_ERROR =
+  "Registration is temporarily unavailable. Please try again in a few minutes.";
+
+/**
+ * True when a Supabase auth error is a system/delivery failure (rate limit,
+ * email provider outage, upstream 5xx) rather than something tied to the
+ * submitted credentials. These are NOT enumeration oracles — they don't reveal
+ * whether the email already exists — so it's safe to surface them honestly
+ * instead of falsely telling the user to check their inbox.
+ */
+function isSystemAuthError(status: number | undefined, code: string | undefined): boolean {
+  const s = status ?? 0;
+  const c = (code ?? "").toLowerCase();
+  return (
+    s === 429 ||
+    s >= 500 ||
+    c.includes("rate_limit") ||
+    c.includes("email_send") ||
+    c === "over_email_send_rate_limit" ||
+    c === "email_provider_disabled" ||
+    c === "smtp_send_failed"
+  );
+}
 
 function emptyState(): AuthActionState {
   return { ok: false, signedIn: false, next: "/", error: null, message: null };
@@ -90,6 +115,12 @@ export async function signInAction(
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
+    // Supabase only returns this when the password is correct but the email
+    // is still unconfirmed — safe to surface without opening an enumeration oracle.
+    const code = (error.code ?? "").toLowerCase();
+    if (code === "email_not_confirmed") {
+      return { ...emptyState(), error: EMAIL_NOT_CONFIRMED_ERROR, next };
+    }
     return { ...emptyState(), error: GENERIC_SIGNIN_ERROR, next };
   }
 
@@ -138,8 +169,15 @@ export async function signUpAction(
     },
   });
 
-  // Anti-enumeration: never reveal whether the email already exists.
   if (error) {
+    // Delivery/system failures (e.g. email rate limit exhausted) must not be
+    // masked as "check your inbox" — no email was sent and no account created.
+    // Surfacing these is safe: they're independent of whether the email exists.
+    if (isSystemAuthError(error.status, error.code)) {
+      return { ...emptyState(), error: SIGNUP_UNAVAILABLE_ERROR };
+    }
+    // Anti-enumeration: for credential-tied errors, never reveal whether the
+    // email already exists.
     return { ok: true, signedIn: false, next: "/", error: null, message: SIGNUP_MESSAGE };
   }
 
