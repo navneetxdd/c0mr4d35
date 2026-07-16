@@ -47,3 +47,6 @@ UI-BUILD-PROMPT.md
 
 .vercel
 .env*
+
+# brag launch video output
+brag-output/

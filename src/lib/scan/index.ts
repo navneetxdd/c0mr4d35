@@ -10,6 +10,7 @@ import { checkTls, tlsFindings, legacyTlsFindings } from "./tls";
 import { checkDns } from "./dns";
 import { probePaths } from "./paths";
 import { fingerprint, correlateOsv } from "./fingerprint";
+import { buildRemediation, type Remediation } from "./remediate";
 import {
   aggregatePosture,
   postureScore,
@@ -92,6 +93,8 @@ export interface ScanResult {
   faviconUrl?: string | null;
   baselineState?: "created" | "reused" | "provided" | "none";
   evidenceNotes?: string[];
+  /** Generated copy-paste hardening (CSP + per-stack config); null when nothing to fix. */
+  remediation?: Remediation | null;
   error?: string;
 }
 
@@ -325,6 +328,16 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
   const subdomainNames = subdomains.map((s) => s.subdomain);
   const deduped = dedupeFindings(findings);
 
+  const remediation = buildRemediation({
+    finalHost: resolved.hostname,
+    isHttps,
+    fingerprint: fp.family,
+    techStack: fp.components.map((c) => c.family),
+    findings: deduped,
+    externalScriptOrigins: [...scriptOrigins],
+    formActions: [...formActions],
+  });
+
   return {
     ok: true,
     target: rootUrl,
@@ -367,6 +380,7 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
     faviconUrl: null,
     baselineState: "none",
     evidenceNotes,
+    remediation,
   };
 }
 
