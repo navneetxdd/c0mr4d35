@@ -15,30 +15,6 @@ interface AuditClientProps {
   entries: AuditEntry[];
 }
 
-function mapAuditRow(row: {
-  seq: number;
-  created_at: string;
-  actor: string | null;
-  action: string;
-  target_table: string | null;
-  target_id: string | null;
-  prev_hash: string | null;
-  this_hash: string;
-}): AuditEntry {
-  const target = row.target_table
-    ? `${row.target_table}${row.target_id ? `:${row.target_id.slice(0, 8)}` : ""}`
-    : "—";
-  return {
-    seq: row.seq,
-    at: row.created_at,
-    actor: row.actor ?? "system",
-    action: row.action,
-    target,
-    prevHash: row.prev_hash ?? "—",
-    thisHash: row.this_hash,
-  };
-}
-
 export function AuditClient({ shell, entries: initial }: AuditClientProps) {
   const [result, setResult] = useState<string | null>(null);
   const [ok, setOk] = useState<boolean | null>(null);
@@ -121,5 +97,3 @@ export function AuditClient({ shell, entries: initial }: AuditClientProps) {
     </AppShell>
   );
 }
-
-export { mapAuditRow };

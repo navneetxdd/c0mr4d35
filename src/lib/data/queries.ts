@@ -371,7 +371,21 @@ export async function fetchCurrentProfile(): Promise<Profile | null> {
 export async function fetchAuditLog(): Promise<AuditEntry[]> {
   const supabase = await createServerSupabase();
   const { data } = await supabase.from("audit_log").select("*").order("seq", { ascending: false }).limit(100);
-  return data ?? [];
+  const rows = data ?? [];
+  return rows.map((row) => {
+    const target = row.target_table
+      ? `${row.target_table}${row.target_id ? `:${String(row.target_id).slice(0, 8)}` : ""}`
+      : "—";
+    return {
+      seq: row.seq as number,
+      at: row.created_at as string,
+      actor: (row.actor as string | null) ?? "system",
+      action: row.action as string,
+      target,
+      prevHash: (row.prev_hash as string | null) ?? "—",
+      thisHash: row.this_hash as string,
+    };
+  });
 }
 
 export function globalPostureFromAssets(assets: Asset[]): Posture {
