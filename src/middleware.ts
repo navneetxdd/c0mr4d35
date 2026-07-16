@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { safeRedirectPath } from "@/lib/auth/safe-redirect";
 import { getSupabaseAnonEnv } from "@/lib/supabase/env";
+import { buildCspHeader } from "@/lib/security/csp";
 
 /**
  * Refreshes the Supabase session on every request and gates the console behind
@@ -12,6 +13,9 @@ import { getSupabaseAnonEnv } from "@/lib/supabase/env";
  * NOTE: middleware is a convenience gate, not the security boundary. Row Level
  * Security + server-side requireRole() are the real enforcement — recent
  * middleware-bypass CVEs are exactly why auth is also checked at the data layer.
+ *
+ * Also mints a per-request CSP nonce (script-src) so production does not need
+ * 'unsafe-inline' for scripts.
  */
 const PUBLIC_PATHS = ["/login", "/auth"];
 
@@ -30,20 +34,39 @@ function stripOpenCors(response: NextResponse): NextResponse {
   return response;
 }
 
+function applyCsp(response: NextResponse, csp: string): NextResponse {
+  response.headers.set("Content-Security-Policy", csp);
+  return stripOpenCors(response);
+}
+
+function createNonce(): string {
+  return Buffer.from(crypto.randomUUID()).toString("base64");
+}
+
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  const nonce = createNonce();
+  const isDev = process.env.NODE_ENV === "development";
+  const csp = buildCspHeader(nonce, isDev);
+
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-nonce", nonce);
+  // Next.js reads this request CSP to stamp nonces on its scripts.
+  requestHeaders.set("Content-Security-Policy", csp);
+
+  let response = applyCsp(
+    NextResponse.next({ request: { headers: requestHeaders } }),
+    csp,
+  );
 
   const { url, anonKey } = getSupabaseAnonEnv();
   const { pathname } = request.nextUrl;
 
   if (!url || !anonKey) {
-    // Never skip the auth gate when misconfigured — that previously let
-    // protected pages render and crash inside createServerSupabase().
-    if (isPublic(pathname)) return stripOpenCors(response);
+    if (isPublic(pathname)) return response;
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/login";
     redirect.searchParams.set("error", "config");
-    return stripOpenCors(NextResponse.redirect(redirect));
+    return applyCsp(NextResponse.redirect(redirect), csp);
   }
 
   const supabase = createServerClient(url, anonKey, {
@@ -53,8 +76,13 @@ export async function middleware(request: NextRequest) {
       },
       setAll(cookiesToSet) {
         for (const { name, value } of cookiesToSet) request.cookies.set(name, value);
-        response = NextResponse.next({ request });
-        for (const { name, value, options } of cookiesToSet) response.cookies.set(name, value, options);
+        response = applyCsp(
+          NextResponse.next({ request: { headers: requestHeaders } }),
+          csp,
+        );
+        for (const { name, value, options } of cookiesToSet) {
+          response.cookies.set(name, value, options);
+        }
       },
     },
   });
@@ -67,17 +95,17 @@ export async function middleware(request: NextRequest) {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/login";
     redirect.searchParams.set("next", safeRedirectPath(pathname));
-    return stripOpenCors(NextResponse.redirect(redirect));
+    return applyCsp(NextResponse.redirect(redirect), csp);
   }
 
   if (user && pathname === "/login") {
     const redirect = request.nextUrl.clone();
     redirect.pathname = safeRedirectPath(request.nextUrl.searchParams.get("next"));
     redirect.search = "";
-    return stripOpenCors(NextResponse.redirect(redirect));
+    return applyCsp(NextResponse.redirect(redirect), csp);
   }
 
-  return stripOpenCors(response);
+  return response;
 }
 
 export const config = {

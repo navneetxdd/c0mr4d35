@@ -6,28 +6,8 @@ const BUILD_HASH =
   process.env.NEXT_PUBLIC_BUILD_HASH?.slice(0, 7) ||
   "dev-local";
 
-// Match Next.js CSP guidance: unsafe-eval only in development; object-src always none.
-const isDev = process.env.NODE_ENV === "development";
-
+/** Non-CSP headers only — Content-Security-Policy is set per-request in middleware (nonce). */
 const securityHeaders = [
-  {
-    key: "Content-Security-Policy",
-    value: [
-      "default-src 'self'",
-      // Keep unsafe-inline for Next.js inline bootstraps (nonce CSP is a follow-up).
-      // Drop unsafe-eval in production — scanners flag it and Next does not need it there.
-      `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
-      "style-src 'self' 'unsafe-inline' https://api.fontshare.com",
-      "font-src 'self' https://cdn.fontshare.com data:",
-      "img-src 'self' data: blob: https:",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://crt.sh",
-      "object-src 'none'",
-      "base-uri 'self'",
-      "form-action 'self'",
-      "frame-ancestors 'none'",
-      "upgrade-insecure-requests",
-    ].join("; "),
-  },
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
