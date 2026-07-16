@@ -45,7 +45,15 @@ async function fetchJson<T>(url: string, timeoutMs: number): Promise<{ ok: true;
       headers: { accept: "application/json", "user-agent": "DatumScanner/1.0" },
     });
     if (res.status === 404) return { ok: false, error: "not found" };
-    if (res.status === 401 || res.status === 403) return { ok: false, error: "invalid API key" };
+    // 401 = bad/missing key. 403 is usually a valid key without Membership for paid endpoints.
+    if (res.status === 401) return { ok: false, error: "invalid API key" };
+    if (res.status === 403) {
+      return {
+        ok: false,
+        error:
+          "access denied (Shodan Membership required for api.shodan.io — free keys work for account/info; InternetDB still runs without a key)",
+      };
+    }
     if (res.status === 429) return { ok: false, error: "rate limited" };
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
     const data = (await res.json()) as T;
@@ -140,6 +148,22 @@ export async function lookupShodanHost(
     isp?: string;
     os?: string;
   }>(url, 12_000);
+
+  // #region agent log
+  fetch("http://127.0.0.1:7781/ingest/1e3609e4-83e2-4af4-abe1-9c10d5bd2172", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "749116" },
+    body: JSON.stringify({
+      sessionId: "749116",
+      runId: "byok-fix",
+      hypothesisId: "H-shodan",
+      location: "shodan.ts:lookupShodanHost",
+      message: "shodan host result",
+      data: { ok: result.ok, error: result.ok ? null : result.error, keyLen: key.length },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
 
   if (!result.ok) {
     notes.push(`Shodan host: ${result.error}`);

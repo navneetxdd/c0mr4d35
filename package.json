@@ -9,7 +9,6 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
     "@phosphor-icons/react": "^2.1.10",
     "@sparticuz/chromium-min": "^149.0.0",
     "@supabase/ssr": "^0.12.3",

@@ -117,7 +117,7 @@ export function SettingsByokForm({ initial }: SettingsByokFormProps) {
             autoComplete="off"
             placeholder={status.shodanConfigured ? "Leave blank to keep current key" : "Shodan API key"}
             disabled={pending}
-            hint="Used for Shodan host + DNS domain APIs"
+            hint="api.shodan.io host/DNS needs a Membership; InternetDB ports/CVEs work without any key"
           />
           <label className="mt-2 flex items-center gap-2 font-data text-[11px] text-text-faint">
             <input type="checkbox" name="clearShodan" disabled={pending} />
@@ -127,6 +127,15 @@ export function SettingsByokForm({ initial }: SettingsByokFormProps) {
             No key yet?{" "}
             <a className="underline hover:text-text" href={SHODAN_KEY_URL} target="_blank" rel="noreferrer">
               Open Shodan account (API key on dashboard)
+            </a>
+            {" · "}
+            <a
+              className="underline hover:text-text"
+              href="https://account.shodan.io/billing/member"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Membership (required for full API)
             </a>
           </p>
         </div>

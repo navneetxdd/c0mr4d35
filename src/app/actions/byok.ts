@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth/require";
-import { getByokStatus, type ByokKeyStatus } from "@/lib/auth/byok";
+import { getByokStatus, sanitizeApiKey, type ByokKeyStatus } from "@/lib/auth/byok";
 
 export type ByokActionState = {
   ok: boolean;
@@ -22,8 +22,8 @@ export async function saveByokKeysAction(
     return { ok: false, error: "Authentication required", message: null, status: null };
   }
 
-  const gemini = String(formData.get("geminiApiKey") ?? "");
-  const shodan = String(formData.get("shodanApiKey") ?? "");
+  const gemini = sanitizeApiKey(String(formData.get("geminiApiKey") ?? ""));
+  const shodan = sanitizeApiKey(String(formData.get("shodanApiKey") ?? ""));
   const clearGemini = formData.get("clearGemini") === "on";
   const clearShodan = formData.get("clearShodan") === "on";
 
@@ -36,8 +36,8 @@ export async function saveByokKeysAction(
 
   const supabase = await createServerSupabase();
   const { data, error } = await supabase.rpc("set_my_api_keys", {
-    p_gemini: gemini.trim() || null,
-    p_shodan: shodan.trim() || null,
+    p_gemini: gemini || null,
+    p_shodan: shodan || null,
     p_clear_gemini: clearGemini,
     p_clear_shodan: clearShodan,
   });
