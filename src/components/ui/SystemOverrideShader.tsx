@@ -78,112 +78,125 @@ export function SystemOverrideShader() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      return;
-    }
+    let cleanup: (() => void) | undefined;
 
-    const gl = canvas.getContext("webgl", {
-      alpha: false,
-      antialias: false,
-      powerPreference: "low-power",
-    });
-    if (!gl) return;
-
-    const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
-    const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
-    if (!vertexShader || !fragmentShader) return;
-
-    const program = gl.createProgram();
-    if (!program) return;
-    gl.attachShader(program, vertexShader);
-    gl.attachShader(program, fragmentShader);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return;
-    gl.useProgram(program);
-
-    const positionBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    gl.bufferData(
-      gl.ARRAY_BUFFER,
-      new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
-      gl.STATIC_DRAW,
-    );
-
-    const positionLocation = gl.getAttribLocation(program, "position");
-    gl.enableVertexAttribArray(positionLocation);
-    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-
-    const resolutionLocation = gl.getUniformLocation(program, "u_resolution");
-    const timeLocation = gl.getUniformLocation(program, "u_time");
-    const mouseLocation = gl.getUniformLocation(program, "u_mouse");
-
-    let animationFrameId = 0;
-    let mouseX = window.innerWidth / 2;
-    let mouseY = window.innerHeight / 2;
-    let targetMouseX = mouseX;
-    let targetMouseY = mouseY;
-    let running = true;
-    let lastFrame = 0;
-    const TARGET_MS = 1000 / 30;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      targetMouseX = e.clientX;
-      targetMouseY = window.innerHeight - e.clientY;
-    };
-
-    const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 1);
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      canvas.width = Math.max(1, Math.floor(w * dpr));
-      canvas.height = Math.max(1, Math.floor(h * dpr));
-      canvas.style.width = `${w}px`;
-      canvas.style.height = `${h}px`;
-      gl.viewport(0, 0, canvas.width, canvas.height);
-    };
-
-    const onVisibility = () => {
-      running = document.visibilityState === "visible";
-      if (running) {
-        lastFrame = 0;
-        animationFrameId = requestAnimationFrame(render);
-      }
-    };
-
-    window.addEventListener("mousemove", handleMouseMove, { passive: true });
-    window.addEventListener("resize", resize, { passive: true });
-    document.addEventListener("visibilitychange", onVisibility);
-    resize();
-
-    const startTime = performance.now();
-
-    const render = (time: number) => {
-      if (!running) return;
-      if (time - lastFrame < TARGET_MS) {
-        animationFrameId = requestAnimationFrame(render);
+    try {
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
         return;
       }
-      lastFrame = time;
 
-      mouseX += (targetMouseX - mouseX) * 0.1;
-      mouseY += (targetMouseY - mouseY) * 0.1;
+      const gl = canvas.getContext("webgl", {
+        alpha: false,
+        antialias: false,
+        powerPreference: "low-power",
+      });
+      if (!gl) return;
 
-      gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
-      gl.uniform1f(timeLocation, (time - startTime) * 0.001);
-      gl.uniform2f(mouseLocation, mouseX * (canvas.width / window.innerWidth), mouseY * (canvas.height / window.innerHeight));
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+      const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+      if (!vertexShader || !fragmentShader) return;
+
+      const program = gl.createProgram();
+      if (!program) return;
+      gl.attachShader(program, vertexShader);
+      gl.attachShader(program, fragmentShader);
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) return;
+      gl.useProgram(program);
+
+      const positionBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+      gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
+        gl.STATIC_DRAW,
+      );
+
+      const positionLocation = gl.getAttribLocation(program, "position");
+      gl.enableVertexAttribArray(positionLocation);
+      gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+      const resolutionLocation = gl.getUniformLocation(program, "u_resolution");
+      const timeLocation = gl.getUniformLocation(program, "u_time");
+      const mouseLocation = gl.getUniformLocation(program, "u_mouse");
+
+      let animationFrameId = 0;
+      let mouseX = window.innerWidth / 2;
+      let mouseY = window.innerHeight / 2;
+      let targetMouseX = mouseX;
+      let targetMouseY = mouseY;
+      let running = true;
+      let lastFrame = 0;
+      const TARGET_MS = 1000 / 30;
+
+      const handleMouseMove = (e: MouseEvent) => {
+        targetMouseX = e.clientX;
+        targetMouseY = window.innerHeight - e.clientY;
+      };
+
+      const resize = () => {
+        const dpr = Math.min(window.devicePixelRatio || 1, 1);
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        canvas.width = Math.max(1, Math.floor(w * dpr));
+        canvas.height = Math.max(1, Math.floor(h * dpr));
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+        gl.viewport(0, 0, canvas.width, canvas.height);
+      };
+
+      const onVisibility = () => {
+        running = document.visibilityState === "visible";
+        if (running) {
+          lastFrame = 0;
+          animationFrameId = requestAnimationFrame(render);
+        }
+      };
+
+      window.addEventListener("mousemove", handleMouseMove, { passive: true });
+      window.addEventListener("resize", resize, { passive: true });
+      document.addEventListener("visibilitychange", onVisibility);
+      resize();
+
+      const startTime = performance.now();
+
+      const render = (time: number) => {
+        if (!running) return;
+        if (time - lastFrame < TARGET_MS) {
+          animationFrameId = requestAnimationFrame(render);
+          return;
+        }
+        lastFrame = time;
+
+        mouseX += (targetMouseX - mouseX) * 0.1;
+        mouseY += (targetMouseY - mouseY) * 0.1;
+
+        gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+        gl.uniform1f(timeLocation, (time - startTime) * 0.001);
+        gl.uniform2f(
+          mouseLocation,
+          mouseX * (canvas.width / window.innerWidth),
+          mouseY * (canvas.height / window.innerHeight),
+        );
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+        animationFrameId = requestAnimationFrame(render);
+      };
+
       animationFrameId = requestAnimationFrame(render);
-    };
 
-    animationFrameId = requestAnimationFrame(render);
+      cleanup = () => {
+        running = false;
+        cancelAnimationFrame(animationFrameId);
+        window.removeEventListener("resize", resize);
+        window.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("visibilitychange", onVisibility);
+      };
+    } catch {
+      // WebGL is decorative — never take down the auth page.
+      cleanup = undefined;
+    }
 
-    return () => {
-      running = false;
-      cancelAnimationFrame(animationFrameId);
-      window.removeEventListener("resize", resize);
-      window.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
+    return () => cleanup?.();
   }, []);
 
   return (
