@@ -34,6 +34,13 @@ export default function LoginPage() {
 
 function AuthPage() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
+  // Password managers inject styles/buttons into email/password fields before
+  // React hydrates, which mismatches SSR HTML. Render the form only after mount.
+  const [formReady, setFormReady] = useState(false);
+
+  useEffect(() => {
+    setFormReady(true);
+  }, []);
 
   return (
     <div className="relative min-h-[100dvh] w-full overflow-hidden bg-void bg-grid">
@@ -93,10 +100,14 @@ function AuthPage() {
 
             <section className="relative w-full rounded-md border border-live/20 bg-carbon/90 px-6 py-9 shadow-[0_0_30px_rgba(184,240,76,0.1)] backdrop-blur-md sm:px-10 sm:py-10">
               <RegistrationMarks />
-              {mode === "signin" ? (
-                <SignInForm onSwitch={() => setMode("signup")} />
+              {formReady ? (
+                mode === "signin" ? (
+                  <SignInForm onSwitch={() => setMode("signup")} />
+                ) : (
+                  <SignUpForm onSwitch={() => setMode("signin")} />
+                )
               ) : (
-                <SignUpForm onSwitch={() => setMode("signin")} />
+                <div className="min-h-[280px]" aria-busy="true" aria-label="Loading form" />
               )}
             </section>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
+import { requireSupabaseAnonEnv } from "@/lib/supabase/env";
 
 /**
  * Browser Supabase client — uses the anon key and the user's session cookie, so
@@ -8,8 +9,6 @@ import { createBrowserClient } from "@supabase/ssr";
  * service-role key.
  */
 export function createClient() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  );
+  const { url, anonKey } = requireSupabaseAnonEnv();
+  return createBrowserClient(url, anonKey);
 }

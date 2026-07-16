@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { safeRedirectPath } from "@/lib/auth/safe-redirect";
+import { getSupabaseAnonEnv } from "@/lib/supabase/env";
 
 /**
  * Refreshes the Supabase session on every request and gates the console behind
@@ -23,21 +24,20 @@ function isPublic(pathname: string): boolean {
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const { url, anonKey } = getSupabaseAnonEnv();
   const { pathname } = request.nextUrl;
 
-  if (!url || !anon) {
-    if (process.env.NODE_ENV === "production" && !isPublic(pathname)) {
-      const redirect = request.nextUrl.clone();
-      redirect.pathname = "/login";
-      redirect.searchParams.set("error", "config");
-      return NextResponse.redirect(redirect);
-    }
-    return response;
+  if (!url || !anonKey) {
+    // Never skip the auth gate when misconfigured — that previously let
+    // protected pages render and crash inside createServerSupabase().
+    if (isPublic(pathname)) return response;
+    const redirect = request.nextUrl.clone();
+    redirect.pathname = "/login";
+    redirect.searchParams.set("error", "config");
+    return NextResponse.redirect(redirect);
   }
 
-  const supabase = createServerClient(url, anon, {
+  const supabase = createServerClient(url, anonKey, {
     cookies: {
       getAll() {
         return request.cookies.getAll();

@@ -13,6 +13,7 @@ export function Input({ label, error, hint, id, className, ...rest }: InputProps
       <span className="type-label">{label}</span>
       <input
         id={inputId}
+        suppressHydrationWarning
         className={cn(
           "h-10 rounded-sm border bg-carbon px-3 text-[16px] text-text",
           "placeholder:text-text-faint",
