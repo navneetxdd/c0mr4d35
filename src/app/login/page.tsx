@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { Suspense, useActionState, useEffect, useState } from "react";
+import { Suspense, useActionState, useEffect, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signInAction, signUpAction, type AuthActionState } from "@/app/actions/auth";
 import { Button } from "@/components/ui/Button";
@@ -16,6 +16,9 @@ const SystemOverrideShader = dynamic(
   { ssr: false },
 );
 
+/** Public production URL — local clones intentionally lack private server secrets. */
+const HOSTED_APP_URL = "https://systemsiege.vercel.app";
+
 const INITIAL: AuthActionState = {
   ok: false,
   signedIn: false,
@@ -23,6 +26,12 @@ const INITIAL: AuthActionState = {
   error: null,
   message: null,
 };
+
+function isLocalHost(): boolean {
+  if (typeof window === "undefined") return false;
+  const host = window.location.hostname;
+  return host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+}
 
 export default function LoginPage() {
   return (
@@ -125,8 +134,14 @@ function SignInForm({ onSwitch }: { onSwitch: () => void }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [state, formAction, pending] = useActionState(signInAction, INITIAL);
+  const [showHostedDialog, setShowHostedDialog] = useState(false);
+  const [localHost, setLocalHost] = useState(false);
   const configError = searchParams.get("error") === "config";
   const authError = searchParams.get("error") === "auth";
+
+  useEffect(() => {
+    setLocalHost(isLocalHost());
+  }, []);
 
   useEffect(() => {
     if (state.signedIn) {
@@ -134,6 +149,14 @@ function SignInForm({ onSwitch }: { onSwitch: () => void }) {
       router.refresh();
     }
   }, [state.signedIn, state.next, router]);
+
+  useEffect(() => {
+    // Local clones are not fully configured by design (no service-role / BYOK secrets).
+    // On failed sign-in, steer users to the hosted deployment instead of a raw auth error.
+    if (state.error && isLocalHost()) {
+      setShowHostedDialog(true);
+    }
+  }, [state.error]);
 
   return (
     <form className="relative w-full space-y-5" action={formAction}>
@@ -149,14 +172,20 @@ function SignInForm({ onSwitch }: { onSwitch: () => void }) {
         <AuthBanner tone="critical">
           Local env incomplete. Stop the server, run `npm run setup`, then `npm run
           dev` again. If it still fails, delete `.env.local` and re-run setup. Scans
-          need a private `SUPABASE_SERVICE_ROLE_KEY` from a teammate — or use
-          https://systemsiege.vercel.app.
+          need a private `SUPABASE_SERVICE_ROLE_KEY` from a teammate — or use{" "}
+          <a href={HOSTED_APP_URL} className="underline underline-offset-2">
+            {HOSTED_APP_URL.replace(/^https:\/\//, "")}
+          </a>
+          .
         </AuthBanner>
       ) : null}
       {authError ? (
         <AuthBanner tone="critical">Sign-in link expired or invalid. Try again.</AuthBanner>
       ) : null}
-      {state.error ? <AuthBanner tone="critical">{state.error}</AuthBanner> : null}
+      {/* Localhost: suppress raw auth errors — dialog handles the message instead. */}
+      {state.error && !localHost ? (
+        <AuthBanner tone="critical">{state.error}</AuthBanner>
+      ) : null}
       {state.message ? <AuthBanner tone="secure">{state.message}</AuthBanner> : null}
 
       <Input
@@ -198,6 +227,15 @@ function SignInForm({ onSwitch }: { onSwitch: () => void }) {
           Request access
         </button>
       </p>
+
+      {showHostedDialog ? (
+        <HostedLoginDialog
+          onClose={() => setShowHostedDialog(false)}
+          onContinue={() => {
+            window.location.assign(`${HOSTED_APP_URL}/login`);
+          }}
+        />
+      ) : null}
     </form>
   );
 }
@@ -279,6 +317,49 @@ function SignUpForm({ onSwitch }: { onSwitch: () => void }) {
   );
 }
 
+function HostedLoginDialog({
+  onClose,
+  onContinue,
+}: {
+  onClose: () => void;
+  onContinue: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-void/80 px-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="hosted-login-title"
+    >
+      <div className="relative w-full max-w-md rounded-md border border-live/25 bg-carbon p-6 shadow-[0_0_40px_rgba(184,240,76,0.12)]">
+        <RegistrationMarks />
+        <p className="type-label !text-live/60">Local session</p>
+        <h3 id="hosted-login-title" className="mt-1 type-h2 text-live">
+          Use the hosted console
+        </h3>
+        <p className="mt-3 font-data text-[13px] leading-relaxed text-text-dim">
+          Localhost is for development only. Private server secrets (service role, BYOK,
+          cron) are not shipped in the repo by design, so full auth on a clone often
+          fails. Sign in on the live deployment instead.
+        </p>
+        <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <Button type="button" variant="ghost" onClick={onClose} className="w-full sm:w-auto">
+            Stay here
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onContinue}
+            className="w-full !border-live !text-live hover:!bg-live/10 sm:w-auto"
+          >
+            Open systemsiege.vercel.app
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Honeypot() {
   return (
     <div className="absolute -left-[9999px] h-0 w-0 overflow-hidden" aria-hidden="true">
@@ -288,7 +369,13 @@ function Honeypot() {
   );
 }
 
-function AuthBanner({ children, tone }: { children: string; tone: "critical" | "secure" }) {
+function AuthBanner({
+  children,
+  tone,
+}: {
+  children: ReactNode;
+  tone: "critical" | "secure";
+}) {
   return (
     <p
       className={cn(
