@@ -33,7 +33,8 @@ export function OverviewClient({ shell, assets: initial, telemetry, feed }: Over
 
   const posture = useMemo(() => {
     if (list.some((a) => a.posture === "critical")) return "critical" as const;
-    if (list.some((a) => a.posture === "watch" || a.posture === "scanning")) return "watch" as const;
+    if (list.some((a) => a.posture === "watch" || a.posture === "scanning" || a.posture === "pending"))
+      return "watch" as const;
     return "secure" as const;
   }, [list]);
 

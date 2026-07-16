@@ -92,6 +92,12 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user && !isPublic(pathname)) {
+    if (pathname.startsWith("/api/")) {
+      return applyCsp(
+        NextResponse.json({ ok: false, error: "Authentication required" }, { status: 401 }),
+        csp,
+      );
+    }
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/login";
     redirect.searchParams.set("next", safeRedirectPath(pathname));

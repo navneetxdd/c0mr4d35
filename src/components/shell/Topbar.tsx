@@ -1,5 +1,6 @@
 "use client";
 
+import type { Posture } from "@/lib/types";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
@@ -11,7 +12,7 @@ import { cn } from "@/lib/format";
 
 interface TopbarProps {
   crumbs: { label: string; href?: string }[];
-  posture: "secure" | "watch" | "critical" | "scanning";
+  posture: Posture;
   watchCount: number;
   profile: { email: string; role: AppRole } | null;
   isAnalyst: boolean;
@@ -61,7 +62,10 @@ export function Topbar({
         </ol>
       </nav>
 
-      <PostureChip posture={posture === "scanning" ? "watch" : posture} watchCount={watchCount} />
+      <PostureChip
+        posture={posture === "scanning" || posture === "pending" ? "watch" : posture}
+        watchCount={watchCount}
+      />
 
       {isAnalyst ? (
         <Button

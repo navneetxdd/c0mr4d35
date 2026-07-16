@@ -38,6 +38,8 @@ export function postureLabel(p: Posture): string {
       return "CRITICAL";
     case "scanning":
       return "SCANNING";
+    case "pending":
+      return "PENDING";
     default:
       return "UNKNOWN";
   }

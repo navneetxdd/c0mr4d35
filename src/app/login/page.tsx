@@ -17,7 +17,8 @@ const SystemOverrideShader = dynamic(
 );
 
 /** Public production URL — local clones intentionally lack private server secrets. */
-const HOSTED_APP_URL = "https://systemsiege.vercel.app";
+const HOSTED_APP_URL =
+  process.env.NEXT_PUBLIC_HOSTED_APP_URL?.trim() || "https://systemsiege.vercel.app";
 
 const INITIAL: AuthActionState = {
   ok: false,

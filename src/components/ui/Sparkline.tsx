@@ -6,6 +6,7 @@ const stroke: Record<Posture, string> = {
   watch: "var(--watch)",
   critical: "var(--critical)",
   scanning: "var(--live)",
+  pending: "var(--text-faint)",
 };
 
 interface SparklineProps {

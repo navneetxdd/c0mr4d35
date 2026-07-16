@@ -15,6 +15,8 @@ import { rebaselineAsset, triggerAssetScan } from "@/app/actions/datum";
 import type { ShellContext } from "@/lib/data/shell";
 import type { Asset, Finding, ScanEntry, VisualEvidence } from "@/lib/types";
 import type { AiVerdict } from "@/lib/ai/gemini";
+import { DefacementConfidencePanel } from "@/components/scan/DefacementConfidencePanel";
+import type { DefacementScore } from "@/lib/scan/defacement-score";
 import { cn } from "@/lib/format";
 
 interface AssetDetailClientProps {
@@ -24,6 +26,7 @@ interface AssetDetailClientProps {
   findings: Finding[];
   evidence: VisualEvidence;
   aiVerdict: AiVerdict | null;
+  defacement: DefacementScore | null;
   isAnalyst: boolean;
 }
 
@@ -34,6 +37,7 @@ export function AssetDetailClient({
   findings,
   evidence,
   aiVerdict,
+  defacement,
   isAnalyst,
 }: AssetDetailClientProps) {
   const [history, setHistory] = useState(scans);
@@ -47,7 +51,9 @@ export function AssetDetailClient({
       ? "critical"
       : assetView.posture === "watch"
         ? "watch"
-        : "secure";
+        : assetView.posture === "pending"
+          ? "neutral"
+          : "secure";
 
   const verdictLabel = (() => {
     if (findings.some((f) => f.group === "DEFACEMENT")) return "DEFACEMENT";
@@ -156,6 +162,7 @@ export function AssetDetailClient({
           <ScanHistory entries={history} selectedId={selectedId} onSelect={setSelectedId} />
         </div>
         <div className="flex flex-col gap-4">
+          {defacement ? <DefacementConfidencePanel score={defacement} eyebrowIndex="02" /> : null}
           <AssetVerdictPanel verdict={showAi ? aiVerdict : null} />
           <FindingsList findings={findings} />
         </div>

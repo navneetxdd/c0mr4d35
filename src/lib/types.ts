@@ -1,4 +1,4 @@
-export type Posture = "secure" | "watch" | "critical" | "scanning";
+export type Posture = "secure" | "watch" | "critical" | "scanning" | "pending";
 /**
  * Product-side finding severity for the monitored asset. Intentionally NOT
  * the hackathon SL-1/SL-2/SL-3 staking levels, which apply to bug reports

@@ -25,6 +25,7 @@ export default async function AssetPage({
       findings={detail.findings}
       evidence={detail.evidence}
       aiVerdict={detail.aiVerdict}
+      defacement={detail.defacement}
       isAnalyst={shell.isAnalyst}
     />
   );

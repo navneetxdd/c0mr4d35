@@ -6,6 +6,7 @@ const colorMap: Record<Posture, string> = {
   watch: "bg-watch shadow-[0_0_8px_rgba(233,180,76,0.4)]",
   critical: "bg-critical led-critical",
   scanning: "bg-live shadow-[0_0_8px_rgba(184,240,76,0.5)]",
+  pending: "bg-text-faint shadow-[0_0_6px_rgba(148,163,184,0.35)]",
 };
 
 interface StatusLedProps {

@@ -468,6 +468,14 @@ function emptyResult(
     faviconUrl: null,
     baselineState: "none",
     evidenceNotes: [],
+    defacement: computeDefacementScore({
+      contentDriftPct: 0,
+      visualDriftPct: null,
+      contentChanged: false,
+      faviconChanged: false,
+      newScriptOrigins: [],
+      findings: [],
+    }),
     error,
   };
 }

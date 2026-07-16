@@ -38,7 +38,7 @@ function hostFromUrl(url: string): string {
 
 function mapPosture(p: string | null | undefined): Asset["posture"] {
   if (p === "critical" || p === "watch" || p === "secure" || p === "scanning") return p;
-  return "secure";
+  return "pending";
 }
 
 export function mapAssetRow(
@@ -56,7 +56,7 @@ export function mapAssetRow(
     id: asset.id,
     name: asset.name,
     host: hostFromUrl(asset.url),
-    posture: scanning ? "scanning" : mapPosture(latest?.posture),
+    posture: scanning ? "scanning" : latest ? mapPosture(latest.posture) : "pending",
     driftScore: Number(latest?.drift_pct ?? 0),
     driftHistory,
     lastCheckAt: latest?.finished_at ?? latest?.started_at ?? asset.created_at,
@@ -230,6 +230,7 @@ export interface AssetDetailData {
   findings: import("@/lib/types").Finding[];
   evidence: VisualEvidence;
   aiVerdict: AiVerdict | null;
+  defacement: import("@/lib/scan/defacement-score").DefacementScore | null;
 }
 
 export async function fetchAssetDetail(id: string): Promise<AssetDetailData | null> {
@@ -283,6 +284,9 @@ export async function fetchAssetDetail(id: string): Promise<AssetDetailData | nu
     .filter((f) => f.scan_id === latestScanId)
     .map((f) => mapFindingRow(f as Finding));
 
+  const signalPayload = latest?.signals as { defacement?: import("@/lib/scan/defacement-score").DefacementScore } | null;
+  const defacement = signalPayload?.defacement ?? null;
+
   const [baselineCapture, currentCapture, diffCapture] = await Promise.all([
     createEvidenceSignedUrl(admin, (baseline as Baseline | null)?.screenshot_path ?? null),
     createEvidenceSignedUrl(admin, latest?.screenshot_path ?? null),
@@ -321,6 +325,7 @@ export async function fetchAssetDetail(id: string): Promise<AssetDetailData | nu
         : [],
     },
     aiVerdict: (latest?.ai_verdict as AiVerdict | null) ?? null,
+    defacement,
   };
 }
 
@@ -392,7 +397,7 @@ export async function fetchAuditLog(): Promise<AuditEntry[]> {
 export function globalPostureFromAssets(assets: Asset[]): Posture {
   if (assets.some((a) => a.posture === "critical")) return "critical";
   if (assets.some((a) => a.posture === "watch")) return "watch";
-  if (assets.some((a) => a.posture === "scanning")) return "scanning";
+  if (assets.some((a) => a.posture === "scanning" || a.posture === "pending")) return "watch";
   return "secure";
 }
 
