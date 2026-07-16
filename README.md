@@ -94,40 +94,6 @@ npm run start
 
 ---
 
-## Deploy on Vercel
-
-1. Import the GitHub repo into Vercel (or use the existing project)
-2. Set the same environment variables from `.env.example` in the Vercel project settings (Production + Preview as needed)
-3. Set `NEXT_PUBLIC_APP_URL=https://systemsiege.vercel.app`
-4. Deploy — production URL: [https://systemsiege.vercel.app](https://systemsiege.vercel.app)
-5. Keep Supabase Auth Site URL / Redirect URLs aligned with that origin
-
-### Scheduled scans
-
-`POST` to `/api/cron/scan` on a schedule with:
-
-```http
-Authorization: Bearer <CRON_SECRET>
-```
-
-Configure this with Vercel Cron or any external scheduler.
-
----
-
-## Console map
-
-| Route | Purpose |
-|-------|---------|
-| `/` | Command overview |
-| `/assets` | Asset register + monitoring |
-| `/scan` | Ad-hoc live assessment |
-| `/incidents` | Incident feed |
-| `/audit` | Append-only audit ledger |
-| `/members` | Org roster / roles |
-| `/settings` | Workspace + per-user API keys |
-
----
-
 ## AI (BYOK)
 
 - **Provider:** Google Gemini · **Model:** `gemini-2.5-flash`
