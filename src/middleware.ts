@@ -21,6 +21,15 @@ function isPublic(pathname: string): boolean {
   return false;
 }
 
+/** This app is same-origin only — never advertise open CORS. */
+function stripOpenCors(response: NextResponse): NextResponse {
+  response.headers.delete("Access-Control-Allow-Origin");
+  response.headers.delete("Access-Control-Allow-Credentials");
+  response.headers.delete("Access-Control-Allow-Methods");
+  response.headers.delete("Access-Control-Allow-Headers");
+  return response;
+}
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
 
@@ -30,11 +39,11 @@ export async function middleware(request: NextRequest) {
   if (!url || !anonKey) {
     // Never skip the auth gate when misconfigured — that previously let
     // protected pages render and crash inside createServerSupabase().
-    if (isPublic(pathname)) return response;
+    if (isPublic(pathname)) return stripOpenCors(response);
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/login";
     redirect.searchParams.set("error", "config");
-    return NextResponse.redirect(redirect);
+    return stripOpenCors(NextResponse.redirect(redirect));
   }
 
   const supabase = createServerClient(url, anonKey, {
@@ -58,17 +67,17 @@ export async function middleware(request: NextRequest) {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/login";
     redirect.searchParams.set("next", safeRedirectPath(pathname));
-    return NextResponse.redirect(redirect);
+    return stripOpenCors(NextResponse.redirect(redirect));
   }
 
   if (user && pathname === "/login") {
     const redirect = request.nextUrl.clone();
     redirect.pathname = safeRedirectPath(request.nextUrl.searchParams.get("next"));
     redirect.search = "";
-    return NextResponse.redirect(redirect);
+    return stripOpenCors(NextResponse.redirect(redirect));
   }
 
-  return response;
+  return stripOpenCors(response);
 }
 
 export const config = {
