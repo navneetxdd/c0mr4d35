@@ -115,7 +115,6 @@ function isAbortError(err: unknown): boolean {
 
 async function generateGeminiJson(apiKey: string, prompt: string): Promise<string> {
   const controller = new AbortController();
-  const started = Date.now();
   const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
   try {
     const res = await fetch(GEMINI_ENDPOINT, {
@@ -136,29 +135,6 @@ async function generateGeminiJson(apiKey: string, prompt: string): Promise<strin
     });
 
     const bodyText = await res.text();
-    // #region agent log
-    fetch("http://127.0.0.1:7781/ingest/1e3609e4-83e2-4af4-abe1-9c10d5bd2172", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "749116" },
-      body: JSON.stringify({
-        sessionId: "749116",
-        runId: "byok-secure",
-        hypothesisId: "H-gemini-timeout",
-        location: "gemini.ts:generateGeminiJson",
-        message: "gemini http result",
-        data: {
-          status: res.status,
-          ok: res.ok,
-          elapsedMs: Date.now() - started,
-          timeoutMs: AI_TIMEOUT_MS,
-          keyKind: apiKey.startsWith("AQ.") ? "AQ" : apiKey.startsWith("AIza") ? "AIza" : "other",
-          keyLen: apiKey.length,
-          promptChars: prompt.length,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
 
     if (!res.ok) {
       throw new Error(explainGeminiHttpError(res.status, bodyText));

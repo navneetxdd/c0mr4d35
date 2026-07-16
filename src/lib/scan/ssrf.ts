@@ -92,11 +92,17 @@ function expandIpv6(address: string): string[] | null {
 function embeddedIpv4FromIpv6(address: string): string | null {
   const addr = address.toLowerCase().split("%")[0]?.replace(/^\[|\]$/g, "") ?? "";
 
+  // IPv4-mapped :ffff:a.b.c.d
   const dotted = addr.match(/:ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
   if (dotted?.[1]) return dotted[1];
 
+  // IPv4-mapped hex :ffff:7f00:1
   const hexMapped = addr.match(/:ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
   if (hexMapped?.[1] && hexMapped[2]) return hextetsToIpv4(hexMapped[1], hexMapped[2]);
+
+  // Deprecated IPv4-compatible ::a.b.c.d (e.g. [::127.0.0.1]) — no ffff marker
+  const compatDotted = addr.match(/^::(\d{1,3}(?:\.\d{1,3}){3})$/);
+  if (compatDotted?.[1]) return compatDotted[1];
 
   // 6to4 2002:V4:/48 — next 32 bits are the IPv4
   const sixToFour = addr.match(/^2002:([0-9a-f]{1,4}):([0-9a-f]{1,4})/i);
@@ -106,6 +112,17 @@ function embeddedIpv4FromIpv6(address: string): string | null {
   if (addr.startsWith("64:ff9b:") || addr.startsWith("64:ff9b::")) {
     const parts = expandIpv6(addr);
     if (parts && parts.length === 8) {
+      return hextetsToIpv4(parts[6]!, parts[7]!);
+    }
+  }
+
+  // Deprecated IPv4-compatible hex ::7f00:1 (96-bit zero prefix, last 32 = IPv4)
+  const parts = expandIpv6(addr);
+  if (parts && parts.length === 8) {
+    const highZero = parts.slice(0, 5).every((p) => Number.parseInt(p, 16) === 0);
+    const fifth = Number.parseInt(parts[5]!, 16);
+    // Mapped uses hextet 5 = 0xffff; compatible uses 0
+    if (highZero && fifth === 0) {
       return hextetsToIpv4(parts[6]!, parts[7]!);
     }
   }

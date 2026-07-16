@@ -166,27 +166,6 @@ async function executeAdhocScan(
       ? await loadAdhocBaseline(admin, data.target, userId)
       : null;
 
-  // #region agent log
-  fetch("http://127.0.0.1:7781/ingest/1e3609e4-83e2-4af4-abe1-9c10d5bd2172", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "749116" },
-    body: JSON.stringify({
-      sessionId: "749116",
-      runId: "post-fix",
-      hypothesisId: "H-adhoc",
-      location: "scan/route.ts:baseline",
-      message: "adhoc baseline scope",
-      data: {
-        hasUserId: Boolean(userId),
-        canPersistAdhoc,
-        hasStored: Boolean(storedBaseline),
-        explicitBaseline,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
-
   const storedSignals = (storedBaseline?.signals ?? {}) as {
     externalScriptOrigins?: string[];
     formActions?: string[];

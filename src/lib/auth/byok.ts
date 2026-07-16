@@ -103,41 +103,10 @@ export async function loadByokSecrets(userId: string): Promise<ByokSecrets> {
       await admin.from("user_api_keys").update(upgrades).eq("user_id", userId);
     }
 
-    const secrets: ByokSecrets = {
+    return {
       geminiApiKey: userGemini || envFallbacks().geminiApiKey,
       shodanApiKey: userShodan || envFallbacks().shodanApiKey,
     };
-
-    // #region agent log
-    fetch("http://127.0.0.1:7781/ingest/1e3609e4-83e2-4af4-abe1-9c10d5bd2172", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "749116" },
-      body: JSON.stringify({
-        sessionId: "749116",
-        runId: "byok-secure",
-        hypothesisId: "H-load",
-        location: "byok.ts:loadByokSecrets",
-        message: "byok secrets loaded",
-        data: {
-          userIdPrefix: userId.slice(0, 8),
-          hasUserGemini: Boolean(userGemini),
-          hasUserShodan: Boolean(userShodan),
-          geminiKind: secrets.geminiApiKey?.startsWith("AQ.")
-            ? "AQ"
-            : secrets.geminiApiKey?.startsWith("AIza")
-              ? "AIza"
-              : secrets.geminiApiKey
-                ? "other"
-                : "none",
-          geminiLen: secrets.geminiApiKey?.length ?? 0,
-          shodanLen: secrets.shodanApiKey?.length ?? 0,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-
-    return secrets;
   } catch {
     return envFallbacks();
   }

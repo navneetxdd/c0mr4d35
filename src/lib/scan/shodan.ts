@@ -149,22 +149,6 @@ export async function lookupShodanHost(
     os?: string;
   }>(url, 12_000);
 
-  // #region agent log
-  fetch("http://127.0.0.1:7781/ingest/1e3609e4-83e2-4af4-abe1-9c10d5bd2172", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "749116" },
-    body: JSON.stringify({
-      sessionId: "749116",
-      runId: "byok-fix",
-      hypothesisId: "H-shodan",
-      location: "shodan.ts:lookupShodanHost",
-      message: "shodan host result",
-      data: { ok: result.ok, error: result.ok ? null : result.error, keyLen: key.length },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
-
   if (!result.ok) {
     notes.push(`Shodan host: ${result.error}`);
     return { record: null, notes, findings };

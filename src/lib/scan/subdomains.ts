@@ -1,4 +1,5 @@
 import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import type { ScanFinding } from "./risk";
 import { lookupShodanDomain } from "./shodan";
 
@@ -90,7 +91,25 @@ export async function discoverSubdomains(
   hostname: string,
   opts?: { shodanApiKey?: string | null; extraHostnames?: string[] },
 ): Promise<{ results: SubdomainResult[]; findings: ScanFinding[]; notes: string[] }> {
-  const domain = registrableDomain(hostname);
+  const host = hostname.toLowerCase().replace(/\.$/, "");
+  if (isIP(host)) {
+    return {
+      results: [],
+      findings: [],
+      notes: ["Subdomain discovery skipped — target is an IP address, not a DNS name."],
+    };
+  }
+
+  const domain = registrableDomain(host);
+  // Guard against garbage registrable labels (e.g. accidental IP fragment paths).
+  if (!domain.includes(".") || /^\d+$/.test(domain.split(".")[0] ?? "")) {
+    return {
+      results: [],
+      findings: [],
+      notes: ["Subdomain discovery skipped — hostname is not a registrable DNS domain."],
+    };
+  }
+
   const notes: string[] = [];
   const findings: ScanFinding[] = [];
   const queriedAt = new Date().toISOString();

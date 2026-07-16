@@ -1,7 +1,8 @@
 import "server-only";
 
-import type { Browser } from "playwright-core";
-import { resolveTarget, SsrfError } from "./ssrf";
+import type { Browser, Page, Response } from "playwright-core";
+import { isIP } from "node:net";
+import { isPublicAddress, resolveTarget, SsrfError, type ResolvedTarget } from "./ssrf";
 
 const VIEWPORT = { width: 1440, height: 900 };
 const CHROMIUM_PACK_TIMEOUT_MS = 90_000;
@@ -15,8 +16,6 @@ export interface ScreenshotCaptureResult {
   png?: Buffer;
   error?: string;
 }
-
-let browserPromise: Promise<Browser> | null = null;
 
 function isServerlessRuntime(): boolean {
   return Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
@@ -41,49 +40,54 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   ]);
 }
 
-async function getBrowser(): Promise<Browser> {
-  if (browserPromise) return browserPromise;
+/**
+ * Launch a dedicated Chromium with hostname pinned to the SSRF-validated IP.
+ * This closes the DNS-rebinding TOCTOU window between resolveTarget and navigation.
+ */
+async function launchPinnedBrowser(pinned: ResolvedTarget): Promise<Browser> {
+  const { chromium } = await import("playwright-core");
+  const host = pinned.hostname;
+  const ip = isIP(pinned.address) === 6 ? `[${pinned.address}]` : pinned.address;
+  // MAP hostname to the exact IP we already validated as public.
+  const resolverRules = `MAP ${host} ${ip}, EXCLUDE localhost`;
 
-  browserPromise = (async () => {
-    const { chromium } = await import("playwright-core");
+  if (isServerlessRuntime()) {
+    const sparticuzMod = await import("@sparticuz/chromium-min");
+    const sparticuz = sparticuzMod.default;
+    const packUrl = process.env.CHROMIUM_REMOTE_EXEC_PATH?.trim() || DEFAULT_CHROMIUM_PACK;
+    const executablePath = await withTimeout(
+      sparticuz.executablePath(packUrl),
+      CHROMIUM_PACK_TIMEOUT_MS,
+      "Chromium pack download",
+    );
+    const args = await resolveSparticuzArgs(sparticuz);
+    return chromium.launch({
+      args: [
+        ...args,
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        `--host-resolver-rules=${resolverRules}`,
+      ],
+      executablePath,
+      headless: true,
+    });
+  }
 
-    if (isServerlessRuntime()) {
-      const sparticuzMod = await import("@sparticuz/chromium-min");
-      const sparticuz = sparticuzMod.default;
-      const packUrl = process.env.CHROMIUM_REMOTE_EXEC_PATH?.trim() || DEFAULT_CHROMIUM_PACK;
-      const executablePath = await withTimeout(
-        sparticuz.executablePath(packUrl),
-        CHROMIUM_PACK_TIMEOUT_MS,
-        "Chromium pack download",
-      );
-      const args = await resolveSparticuzArgs(sparticuz);
-      return chromium.launch({
-        args: [...args, "--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-        executablePath,
-        headless: true,
-      });
-    }
-
-    const override = process.env.CHROMIUM_EXECUTABLE_PATH;
-    if (override) {
-      return chromium.launch({
-        executablePath: override,
-        headless: true,
-      });
-    }
-
+  const override = process.env.CHROMIUM_EXECUTABLE_PATH;
+  const pinArgs = [`--host-resolver-rules=${resolverRules}`];
+  if (override) {
+    return chromium.launch({ executablePath: override, headless: true, args: pinArgs });
+  }
+  try {
+    return await chromium.launch({ channel: "chrome", headless: true, args: pinArgs });
+  } catch {
     try {
-      return await chromium.launch({ channel: "chrome", headless: true });
+      return await chromium.launch({ channel: "msedge", headless: true, args: pinArgs });
     } catch {
-      try {
-        return await chromium.launch({ channel: "msedge", headless: true });
-      } catch {
-        return chromium.launch({ headless: true });
-      }
+      return chromium.launch({ headless: true, args: pinArgs });
     }
-  })();
-
-  return browserPromise;
+  }
 }
 
 function isHttpUrl(raw: string): boolean {
@@ -95,53 +99,94 @@ function isHttpUrl(raw: string): boolean {
   }
 }
 
-export async function captureScreenshot(url: string): Promise<ScreenshotCaptureResult> {
+async function assertPublicRemote(response: Response | null): Promise<void> {
+  if (!response) return;
   try {
-    await resolveTarget(url);
+    const addr = await response.serverAddr();
+    if (addr?.ipAddress && !isPublicAddress(addr.ipAddress)) {
+      throw new SsrfError("Screenshot blocked: connection landed on a non-public address");
+    }
+  } catch (error) {
+    if (error instanceof SsrfError) throw error;
+  }
+}
 
-    const browser = await getBrowser();
-    const page = await browser.newPage({
-      viewport: VIEWPORT,
-      deviceScaleFactor: 1,
-      userAgent:
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
-    });
+async function installSsrfRouteGuard(page: Page, pinnedHost: string): Promise<void> {
+  await page.route("**/*", async (route) => {
+    const req = route.request();
+    const next = req.url();
+    if (!isHttpUrl(next)) {
+      await route.continue();
+      return;
+    }
 
-    page.on("dialog", (dialog) => dialog.dismiss().catch(() => undefined));
+    let host: string;
+    try {
+      host = new URL(next).hostname.toLowerCase();
+    } catch {
+      await route.abort("blockedbyclient");
+      return;
+    }
 
-    // Gate only top-level http(s) navigations — do not DNS-check about:blank / assets.
-    await page.route("**/*", async (route) => {
-      const req = route.request();
-      if (!req.isNavigationRequest() || req.frame() !== page.mainFrame()) {
-        await route.continue();
-        return;
-      }
-      const next = req.url();
-      if (!isHttpUrl(next)) {
-        await route.continue();
-        return;
-      }
+    if (isIP(host) && !isPublicAddress(host)) {
+      await route.abort("blockedbyclient");
+      return;
+    }
+
+    // Main-frame navigations (incl. redirects) must clear resolveTarget again.
+    if (req.isNavigationRequest() && req.frame() === page.mainFrame()) {
       try {
+        // Same host stays pinned by Chromium resolver rules; still validate scheme/port/public.
         await resolveTarget(next);
         await route.continue();
       } catch {
         await route.abort("blockedbyclient");
       }
+      return;
+    }
+
+    // Cross-host navigations inside subframes / top-level redirects already handled above.
+    // Subresources to other hosts: block private IP literals only (checked above).
+    void pinnedHost;
+    await route.continue();
+  });
+}
+
+export async function captureScreenshot(url: string): Promise<ScreenshotCaptureResult> {
+  let browser: Browser | null = null;
+  try {
+    const pinned = await resolveTarget(url);
+    browser = await launchPinnedBrowser(pinned);
+
+    const context = await browser.newContext({
+      viewport: VIEWPORT,
+      deviceScaleFactor: 1,
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
     });
+    const page = await context.newPage();
+    page.on("dialog", (dialog) => dialog.dismiss().catch(() => undefined));
+    await installSsrfRouteGuard(page, pinned.hostname);
 
     try {
       const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 25_000 });
       if (!response) {
         return { ok: false, error: "Screenshot navigation produced no response" };
       }
+
+      await assertPublicRemote(response);
+
       const landed = page.url();
       if (isHttpUrl(landed)) {
-        try {
-          await resolveTarget(landed);
-        } catch {
-          return { ok: false, error: "Screenshot blocked: navigation landed on a non-public address" };
-        }
+        await resolveTarget(landed);
       }
+
+      // Defense in depth: DNS must still only yield public addresses.
+      const again = await resolveTarget(url);
+      if (!isPublicAddress(again.address)) {
+        return { ok: false, error: "Screenshot blocked: DNS rebinding to a non-public address" };
+      }
+
       await page.waitForLoadState("networkidle", { timeout: 4_000 }).catch(() => undefined);
       await page
         .addStyleTag({
@@ -152,10 +197,9 @@ export async function captureScreenshot(url: string): Promise<ScreenshotCaptureR
       const png = await page.screenshot({ type: "png", animations: "disabled" });
       return { ok: true, png };
     } finally {
-      await page.close().catch(() => undefined);
+      await context.close().catch(() => undefined);
     }
   } catch (error) {
-    browserPromise = null;
     const message =
       error instanceof SsrfError
         ? error.message
@@ -163,5 +207,9 @@ export async function captureScreenshot(url: string): Promise<ScreenshotCaptureR
           ? error.message
           : "Screenshot capture failed";
     return { ok: false, error: message };
+  } finally {
+    if (browser) {
+      await browser.close().catch(() => undefined);
+    }
   }
 }
