@@ -42,6 +42,8 @@ export interface Scan {
   visual_drift_pct?: number | null;
   favicon_hash?: string | null;
   favicon_changed?: boolean;
+  ports_json?: unknown;
+  subdomains_json?: unknown;
   error: string | null;
   created_by: string | null;
   started_at: string;

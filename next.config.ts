@@ -9,7 +9,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline' https://api.fontshare.com",
       "font-src 'self' https://cdn.fontshare.com data:",
       "img-src 'self' data: blob: https:",
-      "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://crt.sh",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",
@@ -26,6 +26,7 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: process.cwd(),
   },
+  serverExternalPackages: ["playwright-core", "@sparticuz/chromium"],
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },

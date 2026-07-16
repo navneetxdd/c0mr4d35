@@ -100,6 +100,33 @@ export async function collectScanEvidence(opts: {
     });
   }
 
+  if (visualDriftPct != null && opts.baseline?.screenshotPath) {
+    if (visualDriftPct >= 25) {
+      extraFindings.push({
+        id: "visual-deface-major",
+        category: "DEFACEMENT",
+        risk: "critical",
+        title: "Major visual deviation from baseline screenshot",
+        detail: `Pixel mismatch is ${visualDriftPct}% against the stored baseline screenshot — consistent with visual defacement.`,
+        remediation: "Compare baseline/current/diff captures; if unauthorized, restore content and investigate.",
+        evidence: `visualDrift=${visualDriftPct}% baseline=${opts.baseline.screenshotPath} diff=${diffPath ?? "n/a"}`,
+        url: opts.targetUrl,
+        owasp: "A05:2021 Security Misconfiguration",
+      });
+    } else if (visualDriftPct >= 8) {
+      extraFindings.push({
+        id: "visual-deface-drift",
+        category: "DEFACEMENT",
+        risk: "medium",
+        title: "Visual drift detected",
+        detail: `Screenshot pixel mismatch is ${visualDriftPct}% since baseline (dynamic pages can be noisy — corroborate with DOM drift).`,
+        remediation: "Review the pixel diff image; re-baseline if the visual change is legitimate.",
+        evidence: `visualDrift=${visualDriftPct}% baseline=${opts.baseline.screenshotPath} diff=${diffPath ?? "n/a"}`,
+        url: opts.targetUrl,
+      });
+    }
+  }
+
   let screenshotUrl: string | null = null;
   let baselineScreenshotUrl: string | null = null;
   let diffUrl: string | null = null;

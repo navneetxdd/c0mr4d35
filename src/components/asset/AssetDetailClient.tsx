@@ -49,12 +49,14 @@ export function AssetDetailClient({
         ? "watch"
         : "secure";
 
-  const verdictLabel =
-    assetView.posture === "critical"
-      ? "DEFACEMENT"
-      : assetView.posture === "watch"
-        ? "DRIFT DETECTED"
-        : "BASELINE HELD";
+  const verdictLabel = (() => {
+    if (findings.some((f) => f.group === "DEFACEMENT")) return "DEFACEMENT";
+    if (evidence.visualDriftPct != null && evidence.visualDriftPct >= 8) return "VISUAL DRIFT";
+    if (evidence.domDriftPct >= 8) return "DRIFT DETECTED";
+    if (assetView.posture === "critical") return "AT RISK";
+    if (assetView.posture === "watch") return "WATCH";
+    return "BASELINE HELD";
+  })();
 
   const showAi = assetView.posture !== "secure" || Boolean(aiVerdict?.available);
 

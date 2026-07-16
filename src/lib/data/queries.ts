@@ -288,6 +288,12 @@ export async function fetchAssetDetail(id: string): Promise<AssetDetailData | nu
       notes: Array.isArray((latest?.signals as { evidenceNotes?: string[] } | null)?.evidenceNotes)
         ? (((latest?.signals as { evidenceNotes?: string[] }).evidenceNotes) ?? [])
         : [],
+      ports: Array.isArray((latest as { ports_json?: unknown } | null)?.ports_json)
+        ? (((latest as { ports_json: VisualEvidence["ports"] }).ports_json) ?? [])
+        : [],
+      subdomains: Array.isArray((latest as { subdomains_json?: unknown } | null)?.subdomains_json)
+        ? (((latest as { subdomains_json: VisualEvidence["subdomains"] }).subdomains_json) ?? [])
+        : [],
     },
     aiVerdict: (latest?.ai_verdict as AiVerdict | null) ?? null,
   };

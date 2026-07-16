@@ -171,7 +171,12 @@ export async function executeScanForAsset(opts: ExecuteScanOptions): Promise<Exe
     scan = await runScan({
       target: asset.url,
       baselineHtml: baseline?.html_snapshot ?? null,
-      baselineBehavior: (baseline?.signals as { externalScriptOrigins?: string[] }) ?? null,
+      baselineBehavior: (baseline?.signals as {
+        externalScriptOrigins?: string[];
+        formActions?: string[];
+        openPorts?: number[];
+        subdomains?: string[];
+      }) ?? null,
       singlePage: opts.singlePage ?? false,
     });
   } catch {
@@ -246,6 +251,8 @@ export async function executeScanForAsset(opts: ExecuteScanOptions): Promise<Exe
       visual_drift_pct: scan.visualDriftPct ?? null,
       favicon_hash: scan.faviconHash ?? null,
       favicon_changed: scan.faviconChanged ?? false,
+      ports_json: scan.ports ?? [],
+      subdomains_json: scan.subdomains ?? [],
       finished_at: new Date().toISOString(),
     })
     .eq("id", scanId);
@@ -261,7 +268,11 @@ export async function executeScanForAsset(opts: ExecuteScanOptions): Promise<Exe
     await admin.from("baselines").insert({
       asset_id: opts.assetId,
       dom_hash: scan.domHash,
-      signals: scan.signals,
+      signals: {
+        ...scan.signals,
+        openPorts: scan.signals.openPorts,
+        subdomains: scan.signals.subdomains,
+      },
       screenshot_path: scan.screenshotPath ?? null,
       html_snapshot: truncateHtml(scan.html),
       favicon_hash: scan.faviconHash ?? null,

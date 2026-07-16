@@ -16,7 +16,9 @@ export type FindingCategory =
   | "TLS"
   | "DNS"
   | "EXPOSED PATHS"
-  | "CVE";
+  | "CVE"
+  | "PORTS"
+  | "SUBDOMAINS";
 
 export interface ScanFinding {
   id: string;

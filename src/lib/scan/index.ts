@@ -19,10 +19,19 @@ import {
   type Risk,
   type ScanFinding,
 } from "./risk";
+import { createProgress, type ProgressSink } from "./progress";
+import { probePorts, portChangeFindings, type PortProbeResult } from "./ports";
+import {
+  discoverSubdomains,
+  subdomainChangeFindings,
+  type SubdomainResult,
+} from "./subdomains";
 
 export interface BehaviorBaseline {
   externalScriptOrigins?: string[];
   formActions?: string[];
+  openPorts?: number[];
+  subdomains?: string[];
 }
 
 export interface ScanInput {
@@ -32,12 +41,16 @@ export interface ScanInput {
   baselineBehavior?: BehaviorBaseline | null;
   /** Cap crawl to just the root page (faster on-demand scans). */
   singlePage?: boolean;
+  /** Optional stage reporter for progress UI / SSE. */
+  onProgress?: ProgressSink;
 }
 
 export interface ScanSignals {
   externalScriptOrigins: string[];
   formActions: string[];
   hasPasswordInput: boolean;
+  openPorts: number[];
+  subdomains: string[];
 }
 
 export interface ScanResult {
@@ -62,6 +75,8 @@ export interface ScanResult {
   signals: ScanSignals;
   findings: ScanFinding[];
   html: string;
+  ports?: PortProbeResult[];
+  subdomains?: SubdomainResult[];
   visualDriftPct?: number | null;
   screenshotPath?: string | null;
   baselineScreenshotPath?: string | null;
@@ -78,43 +93,60 @@ export interface ScanResult {
 }
 
 /**
- * Full defacement + vulnerability assessment against one target. The engine:
- *   1. resolves + SSRF-validates + fetches the root (following redirects safely)
- *   2. crawls a bounded set of same-origin pages
- *   3. runs per-page checks (headers, cookies, content) and origin-level checks
- *      (paths, CORS, methods, TLS, DNS, CVE) — every probe fault-isolated
- *   4. diffs content vs baseline for defacement, and behavioral signals vs the
- *      prior scan for suspicious change
- * Fail-open: any single probe failure degrades gracefully; we return what we
- * gathered rather than crashing.
+ * Full defacement + vulnerability assessment against one target.
+ * Fail-open: any single probe failure degrades gracefully.
  */
 export async function runScan(input: ScanInput): Promise<ScanResult> {
   const started = Date.now();
   const scannedAt = new Date().toISOString();
+  const report = createProgress(input.onProgress);
+  const evidenceNotes: string[] = [];
+
+  await report("resolve", "Validating target and resolving public address");
 
   let root;
   try {
     root = await fetchUrl(input.target, { followRedirects: true, timeoutMs: 12_000 });
   } catch (err) {
     const message = err instanceof SsrfError ? err.message : "Target could not be fetched";
+    await report("error", message);
     return emptyResult(input.target, "", scannedAt, Date.now() - started, message);
   }
 
   const { final: page, resolved, chain } = root;
   const rootUrl = resolved.url.toString();
   const isHttps = resolved.url.protocol === "https:";
+  await report("fetch", `Fetched ${rootUrl}`, `HTTP ${page.status}`);
 
-  // Crawl (unless single-page requested).
   const crawlResult = input.singlePage
-    ? { pages: [{ url: rootUrl, status: page.status, headers: page.headers, body: page.body, contentType: page.headers["content-type"] ?? "" }], discovered: [] }
+    ? {
+        pages: [
+          {
+            url: rootUrl,
+            status: page.status,
+            headers: page.headers,
+            body: page.body,
+            contentType: page.headers["content-type"] ?? "",
+          },
+        ],
+        discovered: [] as string[],
+      }
     : await crawl(rootUrl, page, resolved).catch(() => ({
-        pages: [{ url: rootUrl, status: page.status, headers: page.headers, body: page.body, contentType: page.headers["content-type"] ?? "" }],
-        discovered: [],
+        pages: [
+          {
+            url: rootUrl,
+            status: page.status,
+            headers: page.headers,
+            body: page.body,
+            contentType: page.headers["content-type"] ?? "",
+          },
+        ],
+        discovered: [] as string[],
       }));
 
-  const findings: ScanFinding[] = [];
+  await report("crawl", `Crawled ${crawlResult.pages.length} page(s)`, `${crawlResult.discovered.length} links`);
 
-  // Per-page checks (fault-isolated per page).
+  const findings: ScanFinding[] = [];
   const scriptOrigins = new Set<string>();
   const formActions = new Set<string>();
   let hasPasswordInput = false;
@@ -122,10 +154,6 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
   const perPage = await Promise.allSettled(
     crawlResult.pages.map(async (p, index) => {
       const pageFindings: ScanFinding[] = [];
-      // Evaluate response headers/cookies only on the entry page. Crawled pages
-      // often vary in caching/CDN behavior and otherwise drown the scan in
-      // generic-looking findings that do not describe the target's primary
-      // surface accurately.
       if (index === 0) {
         pageFindings.push(...auditHeaders(p.headers, p.url));
         pageFindings.push(...auditCookies(p.headers["set-cookie"], isHttps, p.url));
@@ -144,7 +172,6 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
     }
   }
 
-  // Content / defacement diff (root page vs stored baseline).
   const currentHash = domHash(page.body);
   let driftPct = 0;
   let contentChanged = false;
@@ -155,8 +182,6 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
     findings.push(...defacementFindings(diff.driftPct, diff.changed));
   }
 
-  // Behavioral change vs prior scan (new external script origins are a classic
-  // defacement/supply-chain signal).
   if (input.baselineBehavior?.externalScriptOrigins) {
     const prev = new Set(input.baselineBehavior.externalScriptOrigins);
     const added = [...scriptOrigins].filter((o) => !prev.has(o));
@@ -175,7 +200,6 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
     }
   }
 
-  // Origin-level checks (once), all fault-isolated and run in parallel.
   const fp = fingerprint(page.headers, page.body);
   const [paths, cors, methods, tls, legacyTls, dns, cve] = await Promise.all([
     probePaths(rootUrl, resolved).catch(() => [] as ScanFinding[]),
@@ -187,7 +211,53 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
     correlateOsv(fp).catch(() => [] as ScanFinding[]),
   ]);
   findings.push(...paths, ...cors, ...methods, ...tls, ...legacyTls, ...dns, ...cve);
+  await report(
+    "headers_tls_dns",
+    "Completed header, TLS, and DNS probes",
+    `fingerprint=${fp.family ?? "none"}`,
+  );
+  await report("paths_cors", "Completed path, CORS, and method probes");
+  await report("screenshot_diff", "Visual capture runs after passive probes");
 
+  let ports: PortProbeResult[] = [];
+  let subdomains: SubdomainResult[] = [];
+
+  try {
+    const portProbe = await probePorts(resolved.address || resolved.hostname);
+    ports = portProbe.results;
+    findings.push(...portProbe.findings);
+    findings.push(
+      ...portChangeFindings(resolved.hostname, input.baselineBehavior?.openPorts, ports),
+    );
+    evidenceNotes.push(...portProbe.notes);
+    await report(
+      "ports",
+      "Completed TCP port probe",
+      `${ports.filter((p) => p.state === "open").length} open`,
+    );
+  } catch (error) {
+    evidenceNotes.push(
+      `Port probe skipped: ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+    await report("ports", "Port probe unavailable");
+  }
+
+  try {
+    const subProbe = await discoverSubdomains(resolved.hostname);
+    subdomains = subProbe.results;
+    findings.push(...subProbe.findings);
+    findings.push(...subdomainChangeFindings(input.baselineBehavior?.subdomains, subdomains));
+    evidenceNotes.push(...subProbe.notes);
+    await report("subdomains", "Completed subdomain discovery", `${subdomains.length} names`);
+  } catch (error) {
+    evidenceNotes.push(
+      `Subdomain discovery skipped: ${error instanceof Error ? error.message : "unknown error"}`,
+    );
+    await report("subdomains", "Subdomain discovery unavailable");
+  }
+
+  const openPorts = ports.filter((p) => p.state === "open").map((p) => p.port);
+  const subdomainNames = subdomains.map((s) => s.subdomain);
   const deduped = dedupeFindings(findings);
 
   return {
@@ -213,9 +283,25 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
       externalScriptOrigins: [...scriptOrigins],
       formActions: [...formActions],
       hasPasswordInput,
+      openPorts,
+      subdomains: subdomainNames,
     },
     findings: deduped,
     html: page.body,
+    ports,
+    subdomains,
+    visualDriftPct: null,
+    screenshotPath: null,
+    baselineScreenshotPath: null,
+    diffPath: null,
+    screenshotUrl: null,
+    baselineScreenshotUrl: null,
+    diffUrl: null,
+    faviconHash: null,
+    faviconChanged: false,
+    faviconUrl: null,
+    baselineState: "none",
+    evidenceNotes,
   };
 }
 
@@ -250,7 +336,13 @@ function defacementFindings(driftPct: number, changed: boolean): ScanFinding[] {
   return [];
 }
 
-function emptyResult(target: string, host: string, scannedAt: string, elapsedMs: number, error: string): ScanResult {
+function emptyResult(
+  target: string,
+  host: string,
+  scannedAt: string,
+  elapsedMs: number,
+  error: string,
+): ScanResult {
   return {
     ok: false,
     target,
@@ -262,7 +354,8 @@ function emptyResult(target: string, host: string, scannedAt: string, elapsedMs:
     redirectChain: [],
     pagesScanned: 0,
     discoveredLinks: 0,
-    posture: "watch",
+    // Explicit failure — not a monitored "watch" posture.
+    posture: "secure",
     postureScore: 0,
     domHash: "",
     driftPct: 0,
@@ -270,9 +363,17 @@ function emptyResult(target: string, host: string, scannedAt: string, elapsedMs:
     fingerprint: null,
     techStack: [],
     severityCounts: { critical: 0, high: 0, medium: 0, low: 0, info: 0 },
-    signals: { externalScriptOrigins: [], formActions: [], hasPasswordInput: false },
+    signals: {
+      externalScriptOrigins: [],
+      formActions: [],
+      hasPasswordInput: false,
+      openPorts: [],
+      subdomains: [],
+    },
     findings: [],
     html: "",
+    ports: [],
+    subdomains: [],
     visualDriftPct: null,
     screenshotPath: null,
     baselineScreenshotPath: null,

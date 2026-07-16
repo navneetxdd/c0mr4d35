@@ -54,6 +54,57 @@ export function DomDriftPanel({ evidence }: DomDriftPanelProps) {
             value={evidence.faviconChanged ? "Changed from baseline" : "No change detected"}
           />
         </div>
+        {evidence.ports?.length ? (
+          <div className="mt-4 overflow-auto rounded-sm border border-edge">
+            <p className="border-b border-edge px-3 py-2 type-label">TCP port probe proof</p>
+            <table className="w-full text-left font-data text-[11px]">
+              <thead className="text-text-faint">
+                <tr>
+                  <th className="px-3 py-1">PORT</th>
+                  <th className="px-3 py-1">STATE</th>
+                  <th className="px-3 py-1">RTT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {evidence.ports
+                  .filter((p) => p.state === "open")
+                  .map((p) => (
+                    <tr key={p.port} className="border-t border-edge text-text">
+                      <td className="px-3 py-1">{p.port}</td>
+                      <td className="px-3 py-1 text-watch">{p.state}</td>
+                      <td className="px-3 py-1">{p.rttMs}ms</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+            {!evidence.ports.some((p) => p.state === "open") ? (
+              <p className="px-3 py-2 text-text-faint">No open ports in probed set.</p>
+            ) : null}
+          </div>
+        ) : null}
+        {evidence.subdomains?.length ? (
+          <div className="mt-4 overflow-auto rounded-sm border border-edge">
+            <p className="border-b border-edge px-3 py-2 type-label">Subdomain discovery proof</p>
+            <table className="w-full text-left font-data text-[11px]">
+              <thead className="text-text-faint">
+                <tr>
+                  <th className="px-3 py-1">NAME</th>
+                  <th className="px-3 py-1">SOURCE</th>
+                  <th className="px-3 py-1">IPS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {evidence.subdomains.slice(0, 40).map((s) => (
+                  <tr key={s.subdomain} className="border-t border-edge text-text">
+                    <td className="px-3 py-1">{s.subdomain}</td>
+                    <td className="px-3 py-1">{s.source}</td>
+                    <td className="px-3 py-1">{s.ips.join(", ") || "unresolved"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : null}
         {evidence.notes.length ? (
           <div className="mt-4 rounded-sm border border-edge bg-void/60 p-3">
             <p className="type-label mb-2">Evidence notes</p>

@@ -10,6 +10,8 @@ import { cn } from "@/lib/format";
 const GROUP_ORDER: FindingGroup[] = [
   "DEFACEMENT",
   "BEHAVIOR",
+  "PORTS",
+  "SUBDOMAINS",
   "HEADERS",
   "COOKIES",
   "CORS",
@@ -69,6 +71,16 @@ export function FindingsList({ findings }: FindingsListProps) {
                       {expanded ? (
                         <div className="border-t border-edge px-3 py-2">
                           <p className="type-small text-text-dim">{f.detail}</p>
+                          {f.observedUrl ? (
+                            <p className="mt-1 font-data text-[11px] text-text-faint">
+                              OBSERVED ON · {f.observedUrl}
+                            </p>
+                          ) : null}
+                          {f.evidence ? (
+                            <p className="mt-1 font-data text-[11px] text-text-faint">
+                              EVIDENCE · {f.evidence}
+                            </p>
+                          ) : null}
                           <p className={cn("mt-2 type-data-sm text-text-faint")}>
                             REMEDIATION · {f.remediation}
                           </p>

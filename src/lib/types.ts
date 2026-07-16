@@ -21,7 +21,9 @@ export type FindingGroup =
   | "TLS"
   | "DNS"
   | "EXPOSED PATHS"
-  | "CVE";
+  | "CVE"
+  | "PORTS"
+  | "SUBDOMAINS";
 
 export interface Asset {
   id: string;
@@ -69,6 +71,18 @@ export interface VisualEvidence {
   faviconChanged: boolean;
   faviconUrl: string | null;
   notes: string[];
+  ports?: Array<{
+    port: number;
+    state: "open" | "closed" | "timeout";
+    rttMs: number;
+    probedAt: string;
+  }>;
+  subdomains?: Array<{
+    subdomain: string;
+    source: "ct" | "wordlist";
+    ips: string[];
+    queriedAt: string;
+  }>;
 }
 
 export interface ChangeRegion {
@@ -94,6 +108,8 @@ export interface Finding {
   title: string;
   detail: string;
   remediation: string;
+  evidence?: string;
+  observedUrl?: string;
   cveId?: string;
   stackFamily?: string;
 }

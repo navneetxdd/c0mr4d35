@@ -17,7 +17,9 @@ export function mapFindingRow(f: DbFinding): Finding {
     title: f.title,
     detail: f.detail ?? "",
     remediation: f.remediation ?? "",
+    evidence: f.evidence ?? undefined,
+    observedUrl: f.url ?? undefined,
     cveId: f.category === "CVE" ? f.reference ?? undefined : undefined,
-    stackFamily: f.evidence ?? undefined,
+    stackFamily: f.category === "CVE" ? f.evidence ?? undefined : undefined,
   };
 }
