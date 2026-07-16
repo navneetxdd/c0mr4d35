@@ -1,5 +1,11 @@
 import type { NextConfig } from "next";
 
+/** Same value on server + client — avoids login hydration mismatch from VERCEL_* (server-only). */
+const BUILD_HASH =
+  process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ||
+  process.env.NEXT_PUBLIC_BUILD_HASH?.slice(0, 7) ||
+  "dev-local";
+
 const securityHeaders = [
   {
     key: "Content-Security-Policy",
@@ -23,6 +29,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_BUILD_HASH: BUILD_HASH,
+  },
   turbopack: {
     root: process.cwd(),
   },
