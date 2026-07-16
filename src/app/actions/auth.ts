@@ -25,7 +25,7 @@ function emptyState(): AuthActionState {
 }
 
 async function requestOrigin(): Promise<string> {
-  // Prefer explicit public app URL so auth emails never point at localhost.
+  // Prefer explicit public app URL so auth emails never point at a spoofed Host.
   const configured =
     process.env.NEXT_PUBLIC_APP_URL?.trim() ||
     process.env.APP_URL?.trim() ||
@@ -41,17 +41,17 @@ async function requestOrigin(): Promise<string> {
     return `https://${process.env.VERCEL_URL.replace(/\/$/, "")}`;
   }
 
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  if (!host) {
-    throw new Error("Cannot determine request origin for auth redirects");
+  // Local development only — never mint email redirects from raw Host headers
+  // on any hosted environment (Host-header injection → account takeover).
+  if (process.env.NODE_ENV === "development" && !process.env.VERCEL) {
+    const h = await headers();
+    const host = h.get("host");
+    if (host && (host.startsWith("localhost:") || host === "localhost" || host.startsWith("127.0.0.1"))) {
+      return `http://${host}`;
+    }
   }
-  // Refuse to mint localhost confirmation links when running on Vercel.
-  if (process.env.VERCEL && (host.includes("localhost") || host.startsWith("127."))) {
-    throw new Error("Auth redirect origin misconfigured — set NEXT_PUBLIC_APP_URL");
-  }
-  const proto = h.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
-  return `${proto}://${host}`;
+
+  throw new Error("Auth redirect origin misconfigured — set NEXT_PUBLIC_APP_URL");
 }
 
 async function enforceAuthRateLimit(ip: string, email: string): Promise<boolean> {

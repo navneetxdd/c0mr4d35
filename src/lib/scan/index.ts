@@ -208,8 +208,8 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
     probePaths(rootUrl, resolved).catch(() => [] as ScanFinding[]),
     probeCors(rootUrl, resolved).catch(() => [] as ScanFinding[]),
     checkMethods(rootUrl, resolved).catch(() => [] as ScanFinding[]),
-    isHttps ? checkTls(resolved.hostname).then(tlsFindings).catch(() => [] as ScanFinding[]) : Promise.resolve<ScanFinding[]>([]),
-    isHttps ? legacyTlsFindings(resolved.hostname).catch(() => [] as ScanFinding[]) : Promise.resolve<ScanFinding[]>([]),
+    isHttps ? checkTls(resolved).then(tlsFindings).catch(() => [] as ScanFinding[]) : Promise.resolve<ScanFinding[]>([]),
+    isHttps ? legacyTlsFindings(resolved).catch(() => [] as ScanFinding[]) : Promise.resolve<ScanFinding[]>([]),
     checkDns(resolved.hostname).catch(() => [] as ScanFinding[]),
     correlateOsv(fp).catch(() => [] as ScanFinding[]),
   ]);

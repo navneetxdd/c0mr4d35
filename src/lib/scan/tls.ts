@@ -1,9 +1,14 @@
 import { connect as tlsConnect } from "node:tls";
 import type { ScanFinding } from "./risk";
+import type { ResolvedTarget } from "./ssrf";
 
 /**
  * TLS certificate posture: verifies a cert is presented and reports on
  * expiry proximity. Runs only for https targets.
+ *
+ * Connections are pinned to the already-validated IP (ResolvedTarget.address)
+ * with SNI set to the hostname — never re-resolve DNS at connect time (SSRF
+ * DNS-rebinding TOCTOU).
  */
 
 export interface TlsInfo {
@@ -14,7 +19,9 @@ export interface TlsInfo {
   error?: string;
 }
 
-export function checkTls(hostname: string, port = 443, timeoutMs = 8000): Promise<TlsInfo> {
+type TlsPin = Pick<ResolvedTarget, "hostname" | "address">;
+
+export function checkTls(pin: TlsPin, port = 443, timeoutMs = 8000): Promise<TlsInfo> {
   return new Promise((resolve) => {
     let settled = false;
     const done = (info: TlsInfo) => {
@@ -36,9 +43,9 @@ export function checkTls(hostname: string, port = 443, timeoutMs = 8000): Promis
 
     const socket = tlsConnect(
       {
-        host: hostname,
+        host: pin.address,
         port,
-        servername: hostname,
+        servername: pin.hostname,
         rejectUnauthorized: false, // we inspect the cert ourselves; do not throw
         timeout: timeoutMs,
       },
@@ -71,7 +78,12 @@ export function checkTls(hostname: string, port = 443, timeoutMs = 8000): Promis
  * whether the server still accepts it. Returns true if the deprecated protocol
  * negotiates successfully.
  */
-function acceptsProtocol(hostname: string, version: "TLSv1" | "TLSv1.1", port = 443, timeoutMs = 6000): Promise<boolean> {
+function acceptsProtocol(
+  pin: TlsPin,
+  version: "TLSv1" | "TLSv1.1",
+  port = 443,
+  timeoutMs = 6000,
+): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false;
     const done = (v: boolean) => {
@@ -88,9 +100,9 @@ function acceptsProtocol(hostname: string, version: "TLSv1" | "TLSv1.1", port = 
     const killer = setTimeout(() => done(false), timeoutMs + 500);
     const socket = tlsConnect(
       {
-        host: hostname,
+        host: pin.address,
         port,
-        servername: hostname,
+        servername: pin.hostname,
         rejectUnauthorized: false,
         minVersion: version,
         maxVersion: version,
@@ -103,11 +115,11 @@ function acceptsProtocol(hostname: string, version: "TLSv1" | "TLSv1.1", port = 
   });
 }
 
-export async function legacyTlsFindings(hostname: string): Promise<ScanFinding[]> {
+export async function legacyTlsFindings(pin: TlsPin): Promise<ScanFinding[]> {
   const out: ScanFinding[] = [];
   const [tls10, tls11] = await Promise.all([
-    acceptsProtocol(hostname, "TLSv1").catch(() => false),
-    acceptsProtocol(hostname, "TLSv1.1").catch(() => false),
+    acceptsProtocol(pin, "TLSv1").catch(() => false),
+    acceptsProtocol(pin, "TLSv1.1").catch(() => false),
   ]);
   const legacy: string[] = [];
   if (tls10) legacy.push("TLS 1.0");

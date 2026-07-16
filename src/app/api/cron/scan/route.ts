@@ -1,16 +1,16 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { drainScanJobs, scanDueAssets } from "@/lib/scan/persist";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+/** Compare bearer token to secret without leaking length via early return. */
 function bearerMatches(header: string | null, secret: string): boolean {
   if (!header || !header.startsWith("Bearer ")) return false;
   const token = header.slice("Bearer ".length);
-  const a = Buffer.from(token);
-  const b = Buffer.from(secret);
-  if (a.length !== b.length) return false;
+  const a = createHash("sha256").update(token).digest();
+  const b = createHash("sha256").update(secret).digest();
   return timingSafeEqual(a, b);
 }
 
