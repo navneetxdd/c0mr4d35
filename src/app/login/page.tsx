@@ -147,7 +147,9 @@ function SignInForm({ onSwitch }: { onSwitch: () => void }) {
 
       {configError ? (
         <AuthBanner tone="critical">
-          Authentication is unavailable — server configuration is incomplete.
+          Missing local env. Run `npm run setup` (or copy `.env.example` → `.env.local`), then restart
+          `npm run dev`. Need the private `SUPABASE_SERVICE_ROLE_KEY` from a teammate for scans —
+          or use https://systemsiege.vercel.app.
         </AuthBanner>
       ) : null}
       {authError ? (

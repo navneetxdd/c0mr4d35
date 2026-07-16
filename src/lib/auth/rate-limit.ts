@@ -7,12 +7,22 @@ export async function checkRateLimit(
   limit: number,
   windowSeconds: number,
 ): Promise<boolean> {
-  const admin = createAdminClient();
-  const { data, error } = await admin.rpc("rate_limit_check", {
-    p_key: key,
-    p_limit: limit,
-    p_window_seconds: windowSeconds,
-  });
-  if (error) return false;
-  return Boolean(data);
+  // Service role is required for the RPC. Without it (fresh clone), fail-open in
+  // development so signup/login still work; fail-closed in production.
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()) {
+    return process.env.NODE_ENV !== "production";
+  }
+
+  try {
+    const admin = createAdminClient();
+    const { data, error } = await admin.rpc("rate_limit_check", {
+      p_key: key,
+      p_limit: limit,
+      p_window_seconds: windowSeconds,
+    });
+    if (error) return false;
+    return Boolean(data);
+  } catch {
+    return process.env.NODE_ENV !== "production";
+  }
 }

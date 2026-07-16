@@ -35,47 +35,41 @@ If the login page looks blank or stuck after a deploy, hard-refresh once (`Ctrl+
 ### Prerequisites
 
 - Node.js 20+ (22 recommended)
-- A Supabase project (Auth + Postgres)
 - Optional: Google AI Studio key (Gemini), Shodan key, Discord webhook
 
-### 1. Install
+### 1. Install + env bootstrap
 
 ```bash
 git clone https://github.com/navneetxdd/c0mr4d35.git
 cd c0mr4d35
 npm install
+npm run setup
 ```
 
-### 2. Configure environment
+`npm run setup` copies `.env.example` → `.env.local` if you do not already have one.
+The example includes the **public** Supabase URL + anon key (safe to commit — they already ship in the browser on production).
 
-```bash
-cp .env.example .env.local
-```
+That is enough to open `/login` and sign in/sign up.
 
-Fill at least:
+### 2. Private keys (scans / full console)
 
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Server-side persistence |
-| `NEXT_PUBLIC_APP_URL` | Yes (prod) | Public app origin for auth redirects (e.g. `https://systemsiege.vercel.app` or `http://localhost:3000`) |
-| `CRON_SECRET` | Recommended | Bearer secret for scheduled scans |
-| `BYOK_ENCRYPTION_SECRET` | Recommended | Seals per-user API keys at rest |
-| `GEMINI_API_KEY` | Optional | Deploy-level Gemini fallback |
-| `SHODAN_API_KEY` | Optional | Deploy-level Shodan fallback |
-| `DISCORD_WEBHOOK_URL` | Optional | High-severity alerts |
-| `CHROMIUM_EXECUTABLE_PATH` | Optional (local) | Local Chrome/Edge path for screenshots |
-| `CHROMIUM_REMOTE_EXEC_PATH` | Optional (Vercel) | Remote Chromium pack URL for serverless screenshots |
+Add these to `.env.local` (ask a teammate privately — **never commit**):
+
+| Variable | Purpose |
+|----------|---------|
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-side persistence, rate limits, asset scans |
+| `BYOK_ENCRYPTION_SECRET` | Seal per-user API keys (required for Settings BYOK) |
+| `CRON_SECRET` | Optional scheduled scans |
+
+Or skip local secrets and use the hosted app: **[https://systemsiege.vercel.app](https://systemsiege.vercel.app)**
 
 ### 3. Database
 
-Apply SQL migrations in `supabase/migrations/` to your Supabase project (SQL editor or Supabase CLI), in order (`0001` … `0006`).
+Migrations live in `supabase/migrations/` (`0001` … `0008`). The shared project already has them applied.
 
-In **Supabase → Authentication → URL Configuration**:
+In **Supabase → Authentication → URL Configuration** for local work, allow:
 
-- **Site URL:** your app origin (`http://localhost:3000` for local, `https://systemsiege.vercel.app` for production)
-- **Redirect URLs:** include `{origin}/auth/callback`
+- Site URL / redirect: `http://localhost:3000` and `{origin}/auth/callback`
 
 ### 4. Dev server
 
@@ -84,6 +78,8 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) → `/login`.
+
+If you see “Missing local env”, you skipped `npm run setup` / `.env.local`.
 
 ### 5. Production build (local)
 
