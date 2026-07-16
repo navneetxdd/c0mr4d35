@@ -27,8 +27,25 @@ export function AssetVerdictPanel({ verdict }: AssetVerdictPanelProps) {
         </p>
         <p className="mt-2 type-small text-text-dim">
           {verdict?.error ? `Reason: ${verdict.error}. ` : ""}
-          Findings below are authoritative — detection does not depend on Gemini.
+          {verdict?.summary ??
+            "Findings below are authoritative — detection does not depend on Gemini."}
         </p>
+        {verdict?.prioritizedRisks?.length ? (
+          <div className="mt-4 border-t border-edge pt-3">
+            <p className="type-label mb-2">Heuristic prioritized risks</p>
+            <ul className="space-y-2">
+              {verdict.prioritizedRisks.map((r, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <StatusLed posture="watch" />
+                  <div>
+                    <p className="font-data text-[12px] text-text">{r.title}</p>
+                    <p className="type-data-sm text-text-faint">{r.why}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <p className="mt-3">
           <Link
             href="/settings#api-keys"

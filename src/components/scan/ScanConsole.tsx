@@ -12,6 +12,7 @@ import { StatusLed } from "@/components/ui/StatusLed";
 import type { ShellContext } from "@/lib/data/shell";
 import type { ScanApiResponse, SafeScanResult } from "@/lib/scan/api-types";
 import type { AiVerdict } from "@/lib/ai/gemini";
+import type { DefacementScore } from "@/lib/scan/defacement-score";
 import type { Risk } from "@/lib/scan/risk";
 import { explainPostureScore } from "@/lib/scan/risk";
 import type { ScanStageEvent } from "@/lib/scan/progress";
@@ -278,6 +279,7 @@ function Results({ scan, verdict }: { scan: SafeScanResult; verdict?: AiVerdict 
         </section>
 
         <EvidencePanel scan={scan} />
+        {scan.defacement ? <DefacementConfidencePanel score={scan.defacement} /> : null}
         <ReconProofPanel scan={scan} />
         <FindingsPanel
           title={`Defacement signals · ${String(defacementFindings.length).padStart(2, "0")}`}
@@ -476,6 +478,51 @@ function FindingsPanel({
   );
 }
 
+function DefacementConfidencePanel({ score }: { score: DefacementScore }) {
+  const tone =
+    score.classification === "DEFACEMENT"
+      ? "critical"
+      : score.classification === "SUSPECT" || score.classification === "WATCH"
+        ? "watch"
+        : "secure";
+  return (
+    <section className="panel relative p-4">
+      <RegistrationMarks />
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <MonoEyebrow index="02b">Defacement confidence</MonoEyebrow>
+          <p
+            className={cn(
+              "mt-2 type-h2",
+              tone === "critical" ? "text-critical" : tone === "watch" ? "text-watch" : "text-secure",
+            )}
+          >
+            {score.score}
+            <span className="ml-2 font-data text-[12px] text-text-faint">/ 100</span>
+          </p>
+          <p className="mt-1 font-data text-[11px] uppercase tracking-wider text-text-dim">
+            {score.classification} · {score.layersFired} layer{score.layersFired === 1 ? "" : "s"} fired
+            {score.shouldIncident ? " · INCIDENT THRESHOLD" : ""}
+          </p>
+        </div>
+      </div>
+      <ul className="mt-4 space-y-2">
+        {score.layers.map((layer) => (
+          <li key={layer.id} className="flex items-start justify-between gap-3 border-t border-edge/60 pt-2">
+            <div className="min-w-0">
+              <p className="font-data text-[12px] text-text">
+                {layer.fired ? "●" : "○"} {layer.label}
+              </p>
+              <p className="type-data-sm text-text-faint">{layer.detail}</p>
+            </div>
+            <span className="shrink-0 font-data text-[12px] text-text-dim">{layer.score}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function VerdictPanel({ verdict }: { verdict?: AiVerdict }) {
   if (!verdict || !verdict.available) {
     return (
@@ -487,8 +534,25 @@ function VerdictPanel({ verdict }: { verdict?: AiVerdict }) {
         </p>
         <p className="mt-2 type-small text-text-dim">
           {verdict?.error ? `Reason: ${verdict.error}. ` : ""}
-          Findings on the left are authoritative — detection does not depend on the AI call.
+          {verdict?.summary ??
+            "Findings on the left are authoritative — detection does not depend on the AI call."}
         </p>
+        {verdict?.prioritizedRisks?.length ? (
+          <div className="mt-4 border-t border-edge pt-3">
+            <p className="type-label mb-2">Heuristic prioritized risks</p>
+            <ul className="space-y-2">
+              {verdict.prioritizedRisks.map((r, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <StatusLed posture="watch" />
+                  <div>
+                    <p className="font-data text-[12px] text-text">{r.title}</p>
+                    <p className="type-data-sm text-text-faint">{r.why}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <p className="mt-3">
           <Link
             href="/settings#api-keys"

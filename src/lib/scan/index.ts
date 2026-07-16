@@ -27,6 +27,11 @@ import {
   type SubdomainResult,
 } from "./subdomains";
 import { lookupInternetDb, lookupShodanHost } from "./shodan";
+import {
+  computeDefacementScore,
+  newScriptOrigins,
+  type DefacementScore,
+} from "./defacement-score";
 
 export interface BehaviorBaseline {
   externalScriptOrigins?: string[];
@@ -92,6 +97,8 @@ export interface ScanResult {
   faviconUrl?: string | null;
   baselineState?: "created" | "reused" | "provided" | "none";
   evidenceNotes?: string[];
+  /** Multi-signal defacement confidence — computed after evidence merge when visual exists. */
+  defacement?: DefacementScore;
   error?: string;
 }
 
@@ -324,6 +331,15 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
   const openPorts = ports.filter((p) => p.state === "open").map((p) => p.port);
   const subdomainNames = subdomains.map((s) => s.subdomain);
   const deduped = dedupeFindings(findings);
+  const scriptList = [...scriptOrigins];
+  const defacement = computeDefacementScore({
+    contentDriftPct: driftPct,
+    visualDriftPct: null,
+    contentChanged,
+    faviconChanged: false,
+    newScriptOrigins: newScriptOrigins(scriptList, input.baselineBehavior?.externalScriptOrigins),
+    findings: deduped,
+  });
 
   return {
     ok: true,
@@ -345,7 +361,7 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
     techStack: fp.components.map((c) => c.family),
     severityCounts: countBySeverity(deduped),
     signals: {
-      externalScriptOrigins: [...scriptOrigins],
+      externalScriptOrigins: scriptList,
       formActions: [...formActions],
       hasPasswordInput,
       openPorts,
@@ -367,6 +383,7 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
     faviconUrl: null,
     baselineState: "none",
     evidenceNotes,
+    defacement,
   };
 }
 

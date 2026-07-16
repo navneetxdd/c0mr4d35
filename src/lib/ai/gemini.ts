@@ -27,26 +27,6 @@ export interface AiVerdict {
   error?: string;
 }
 
-function heuristicFallback(scan: ScanResult, reason: string): AiVerdict {
-  const verdict: AiVerdict["verdict"] =
-    scan.posture === "critical"
-      ? scan.findings.some((f) => f.category === "DEFACEMENT")
-        ? "DEFACEMENT"
-        : "AT RISK"
-      : scan.posture === "watch"
-        ? "DRIFT DETECTED"
-        : "BASELINE HELD";
-  return {
-    available: false,
-    verdict,
-    confidence: 0,
-    summary: "AI enrichment unavailable — findings below are authoritative.",
-    prioritizedRisks: [],
-    recommendedActions: [],
-    error: reason,
-  };
-}
-
 const RISK_RANK: Record<string, number> = {
   critical: 0,
   high: 1,
@@ -54,6 +34,46 @@ const RISK_RANK: Record<string, number> = {
   low: 3,
   info: 4,
 };
+
+function heuristicFallback(scan: ScanResult, reason: string): AiVerdict {
+  const hasDeface = scan.findings.some((f) => f.category === "DEFACEMENT");
+  const verdict: AiVerdict["verdict"] =
+    scan.defacement?.classification === "DEFACEMENT" || hasDeface
+      ? "DEFACEMENT"
+      : scan.posture === "critical"
+        ? "AT RISK"
+        : scan.posture === "watch" || (scan.defacement?.score ?? 0) >= 20
+          ? "DRIFT DETECTED"
+          : "BASELINE HELD";
+
+  const ranked = [...scan.findings].sort(
+    (a, b) => (RISK_RANK[a.risk] ?? 9) - (RISK_RANK[b.risk] ?? 9),
+  );
+  const prioritizedRisks = ranked.slice(0, 3).map((f) => ({
+    title: f.title,
+    why: f.detail.slice(0, 160),
+  }));
+  const recommendedActions = ranked
+    .slice(0, 3)
+    .map((f) => f.remediation)
+    .filter(Boolean)
+    .slice(0, 3);
+
+  const confBoost = scan.defacement ? Math.min(0.55, scan.defacement.score / 100) : 0.25;
+
+  return {
+    available: false,
+    verdict,
+    confidence: confBoost,
+    summary:
+      scan.defacement != null
+        ? `Heuristic triage — defacement confidence ${scan.defacement.score}/100 (${scan.defacement.layersFired} layers). Engine findings remain authoritative.`
+        : "AI enrichment unavailable — findings below are authoritative.",
+    prioritizedRisks,
+    recommendedActions,
+    error: reason,
+  };
+}
 
 function buildPrompt(scan: ScanResult): string {
   const ranked = [...scan.findings].sort(

@@ -11,6 +11,7 @@ import {
   type ScanFinding,
 } from "@/lib/scan/risk";
 import { collectScanEvidence } from "@/lib/scan/evidence";
+import { computeDefacementScore, newScriptOrigins } from "@/lib/scan/defacement-score";
 
 const HTML_CAP = 500_000;
 
@@ -105,7 +106,11 @@ async function maybeAlert(
     delivered,
   });
 
-  const openIncident = critical.length > 0 || scan.driftPct >= 25;
+  // Multi-signal defacement gate OR classic critical/high-drift thresholds.
+  const openIncident =
+    scan.defacement?.shouldIncident === true ||
+    critical.length > 0 ||
+    scan.driftPct >= 25;
   if (openIncident) {
     const { data: existing } = await admin
       .from("incidents")
@@ -232,6 +237,17 @@ export async function executeScanForAsset(opts: ExecuteScanOptions): Promise<Exe
     scan.baselineState = baseline ? "reused" : "created";
     scan.evidenceNotes = evidence.notes;
 
+    const baselineScripts = (baseline?.signals as { externalScriptOrigins?: string[] } | null)
+      ?.externalScriptOrigins;
+    scan.defacement = computeDefacementScore({
+      contentDriftPct: scan.driftPct,
+      visualDriftPct: scan.visualDriftPct,
+      contentChanged: scan.contentChanged,
+      faviconChanged: scan.faviconChanged,
+      newScriptOrigins: newScriptOrigins(scan.signals.externalScriptOrigins, baselineScripts),
+      findings: scan.findings,
+    });
+
     const verdict = opts.withAi !== false ? await getAiVerdict(scan, secrets.geminiApiKey) : null;
 
     await admin
@@ -245,7 +261,11 @@ export async function executeScanForAsset(opts: ExecuteScanOptions): Promise<Exe
         pages_scanned: scan.pagesScanned,
         tech_stack: scan.techStack,
         severity_counts: scan.severityCounts,
-        signals: { ...scan.signals, evidenceNotes: scan.evidenceNotes ?? [] },
+        signals: {
+          ...scan.signals,
+          evidenceNotes: scan.evidenceNotes ?? [],
+          defacement: scan.defacement,
+        },
         ai_verdict: verdict ?? null,
         dom_hash: scan.domHash,
         screenshot_path: scan.screenshotPath ?? null,

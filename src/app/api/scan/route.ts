@@ -11,6 +11,7 @@ import {
 import { checkRateLimit } from "@/lib/auth/rate-limit";
 import { loadAdhocBaseline, saveAdhocBaseline, targetKeyFromUrl } from "@/lib/scan/adhoc";
 import { collectScanEvidence } from "@/lib/scan/evidence";
+import { computeDefacementScore, newScriptOrigins } from "@/lib/scan/defacement-score";
 import { aggregatePosture, countBySeverity, dedupeFindings, postureScore } from "@/lib/scan/risk";
 import type { ScanStageEvent } from "@/lib/scan/progress";
 
@@ -234,6 +235,26 @@ async function executeAdhocScan(
     scan.faviconChanged = evidence.faviconChanged;
     scan.faviconUrl = evidence.faviconUrl;
     evidenceNotes = [...evidenceNotes, ...evidence.notes];
+
+    const baselineScripts =
+      storedBaseline?.signals &&
+      typeof storedBaseline.signals === "object" &&
+      Array.isArray((storedBaseline.signals as { externalScriptOrigins?: string[] }).externalScriptOrigins)
+        ? (storedBaseline.signals as { externalScriptOrigins: string[] }).externalScriptOrigins
+        : data.baselineBehavior?.externalScriptOrigins;
+    scan.defacement = computeDefacementScore({
+      contentDriftPct: scan.driftPct,
+      visualDriftPct: scan.visualDriftPct,
+      contentChanged: scan.contentChanged,
+      faviconChanged: scan.faviconChanged,
+      newScriptOrigins: newScriptOrigins(scan.signals.externalScriptOrigins, baselineScripts),
+      findings: scan.findings,
+    });
+
+    // Re-run AI after evidence so vision-adjacent signals (favicon/visual) inform the prompt.
+    if (data.withAi && (!verdict || !verdict.available)) {
+      verdict = await getAiVerdict(scan, secrets.geminiApiKey);
+    }
 
     if (!storedBaseline && !explicitBaseline && canPersistAdhoc && userId) {
       await saveAdhocBaseline(admin, data.target, userId, {

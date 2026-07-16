@@ -3,38 +3,44 @@
 import { useMemo } from "react";
 import { cn } from "@/lib/format";
 
-const FAKE_LOGS = [
-  "RCE       Recur1-CorD002: active",
-  "RCE       Recur1-CorD003: active",
-  "RCE       Recur1-CorD004: active",
-  "RCE       SQLi A011j",
-  "DATAIN    CorD001-Routine: offline",
-  "DATAIN    Sever1-Routine: active",
-  "RCE       ",
-  "DATAIN    CorD002",
-  "RCE       Recur1-CorD005: active",
-  "RCE       Recur1-CorD006: active",
-  "RCE       Recur1-CorD007: active",
-  "RCE       Recur1-CorD008: active",
-  "DATAIN    Sever2-Routine: offline",
-  "RCENG     MrtD",
-  "RCE       Recur1-CorD009: active",
-  "RCE       Recur1-CorD010: active",
-  "RCE       Recur1-CorD011: active",
-  "RCE       Recur1-CorD012: active",
-  "DATAIN    Sever3-Routine: active",
-  "RCENG     MrtD",
-  "RCE       Recur1-CorD013: active",
+/**
+ * Decorative atmosphere for the login stage — intentionally NOT live telemetry.
+ * Copy is framed as aesthetic glyph noise so judges don't confuse it with product data.
+ */
+const ATMOSPHERE = [
+  "INTEGRITY · waiting for session",
+  "BASELINE  · hash lattice idle",
+  "DRIFT     · observer offline",
+  "AUDIT     · chain sealed",
+  "POSTURE   · —",
+  "EVIDENCE  · buffer empty",
+  "INTEGRITY · waiting for session",
+  "BASELINE  · hash lattice idle",
+  "DRIFT     · observer offline",
+  "AUDIT     · chain sealed",
+  "POSTURE   · —",
+  "EVIDENCE  · buffer empty",
+  "INTEGRITY · waiting for session",
+  "BASELINE  · hash lattice idle",
+  "DRIFT     · observer offline",
+  "AUDIT     · chain sealed",
+  "POSTURE   · —",
+  "EVIDENCE  · buffer empty",
+  "INTEGRITY · waiting for session",
+  "BASELINE  · hash lattice idle",
+  "DRIFT     · observer offline",
 ];
 
 export function TerminalLogs({ className, side = "left" }: { className?: string; side?: "left" | "right" }) {
   const blocks = useMemo(() => {
-    // Generate a long list to scroll infinitely
     return Array.from({ length: 15 }).map((_, i) => (
       <div key={i} className="mb-4">
-        {FAKE_LOGS.map((log, j) => (
+        {ATMOSPHERE.map((log, j) => (
           <div key={j} className="flex gap-2">
-            <span className="opacity-50">30{i}{j} |</span>
+            <span className="opacity-50">
+              30{i}
+              {j} |
+            </span>
             <span>{log}</span>
           </div>
         ))}
@@ -47,16 +53,15 @@ export function TerminalLogs({ className, side = "left" }: { className?: string;
       className={cn(
         "pointer-events-none absolute inset-y-0 w-64 overflow-hidden font-data text-[10px] uppercase leading-relaxed text-live/60 crt-flicker",
         side === "left" ? "left-4 text-left" : "right-4 text-right",
-        className
+        className,
       )}
+      aria-hidden
       style={{
         maskImage: "linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)",
         WebkitMaskImage: "linear-gradient(to bottom, transparent, black 10%, black 90%, transparent)",
       }}
     >
-      <div className="mt-2 h-[200%] w-full animate-terminal-scroll">
-        {blocks}
-      </div>
+      <div className="mt-2 h-[200%] w-full animate-terminal-scroll">{blocks}</div>
     </div>
   );
 }

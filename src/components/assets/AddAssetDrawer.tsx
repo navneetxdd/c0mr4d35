@@ -48,7 +48,7 @@ function classifyUrl(raw: string): ResolveState {
   if (host === "metadata.google.internal" || host === "169.254.169.254") {
     return { kind: "blocked", detail: "✗ LINK-LOCAL / METADATA BLOCKED" };
   }
-  return { kind: "ok", detail: "✓ RESOLVES TO PUBLIC IP (preflight)" };
+  return { kind: "ok", detail: "✓ URL FORMAT OK · PUBLIC HOSTNAME PATTERN" };
 }
 
 export function AddAssetDrawer({ open, onClose, onCreated }: AddAssetDrawerProps) {
@@ -124,7 +124,7 @@ export function AddAssetDrawer({ open, onClose, onCreated }: AddAssetDrawerProps
                     ? resolve.detail
                     : resolve.kind === "checking"
                       ? "… validating"
-                      : "Live SSRF-safe preflight"
+                      : "Format check (server SSRF guard runs on submit)"
                 }
                 error={
                   resolve.kind === "blocked" || resolve.kind === "invalid"
