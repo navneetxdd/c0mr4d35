@@ -7,11 +7,12 @@ import type {
   Baseline,
   Scan,
   Finding,
-  AuditEntry,
+  AuditEntry as DbAuditEntry,
   Profile,
 } from "@/lib/supabase/types";
 import type {
   Asset,
+  AuditEntry,
   FeedEvent,
   Incident,
   Member,
@@ -371,19 +372,19 @@ export async function fetchCurrentProfile(): Promise<Profile | null> {
 export async function fetchAuditLog(): Promise<AuditEntry[]> {
   const supabase = await createServerSupabase();
   const { data } = await supabase.from("audit_log").select("*").order("seq", { ascending: false }).limit(100);
-  const rows = data ?? [];
+  const rows = (data ?? []) as DbAuditEntry[];
   return rows.map((row) => {
     const target = row.target_table
-      ? `${row.target_table}${row.target_id ? `:${String(row.target_id).slice(0, 8)}` : ""}`
+      ? `${row.target_table}${row.target_id ? `:${row.target_id.slice(0, 8)}` : ""}`
       : "—";
     return {
-      seq: row.seq as number,
-      at: row.created_at as string,
-      actor: (row.actor as string | null) ?? "system",
-      action: row.action as string,
+      seq: row.seq,
+      at: row.created_at,
+      actor: row.actor ?? "system",
+      action: row.action,
       target,
-      prevHash: (row.prev_hash as string | null) ?? "—",
-      thisHash: row.this_hash as string,
+      prevHash: row.prev_hash ?? "—",
+      thisHash: row.this_hash,
     };
   });
 }
