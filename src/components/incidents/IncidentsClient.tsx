@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell/AppShell";
@@ -13,6 +13,90 @@ import { updateIncidentStatus } from "@/app/actions/datum";
 import type { ShellContext } from "@/lib/data/shell";
 import type { Incident, IncidentStatus } from "@/lib/types";
 import { cn, formatClock, severityTone } from "@/lib/format";
+
+function Mermaid({ chart }: { chart: string }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [svg, setSvg] = useState<string | null>(null);
+  const [error, setError] = useState<boolean>(false);
+
+  useEffect(() => {
+    let active = true;
+    
+    const initMermaid = async () => {
+      try {
+        const globalWindow = window as unknown as {
+          mermaid?: {
+            initialize: (config: Record<string, unknown>) => void;
+            render: (id: string, text: string) => Promise<{ svg: string }>;
+          };
+        };
+
+        if (!globalWindow.mermaid) {
+          await new Promise<void>((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js";
+            script.async = true;
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error("Failed to load Mermaid CDN"));
+            document.body.appendChild(script);
+          });
+        }
+        
+        const mermaid = globalWindow.mermaid;
+        if (mermaid) {
+          mermaid.initialize({
+            startOnLoad: false,
+            theme: "dark",
+            securityLevel: "loose",
+          });
+
+          if (active && containerRef.current) {
+            const id = `mermaid-${Math.random().toString(36).substr(2, 9)}`;
+            const cleanChart = chart
+              .replace(/\\n/g, "\n")
+              .replace(/flowchart TD/g, "graph TD");
+            const { svg: renderedSvg } = await mermaid.render(id, cleanChart);
+            if (active) {
+              setSvg(renderedSvg);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Mermaid rendering failed:", err);
+        if (active) setError(true);
+      }
+    };
+
+    initMermaid();
+
+    return () => {
+      active = false;
+    };
+  }, [chart]);
+
+  if (error) {
+    return (
+      <pre className="font-mono text-[9px] text-text-faint bg-void p-3 rounded-sm border border-edge whitespace-pre-wrap overflow-auto max-h-40">
+        {chart.replace(/\\n/g, "\n")}
+      </pre>
+    );
+  }
+
+  if (svg) {
+    return (
+      <div 
+        className="flex justify-center p-2 [&>svg]:w-full [&>svg]:h-auto [&>svg]:max-h-60" 
+        dangerouslySetInnerHTML={{ __html: svg }} 
+      />
+    );
+  }
+
+  return (
+    <div ref={containerRef} className="font-mono text-[9px] text-text-faint bg-void p-3 rounded-sm border border-edge whitespace-pre-wrap overflow-auto max-h-40">
+      {chart.replace(/\\n/g, "\n")}
+    </div>
+  );
+}
 
 interface IncidentsClientProps {
   shell: ShellContext;
@@ -151,11 +235,56 @@ export function IncidentsClient({ shell, incidents: initial }: IncidentsClientPr
           <aside className="relative flex h-full w-full max-w-md flex-col border-l border-edge bg-carbon p-5">
             <MonoEyebrow index="13">Incident · {drawer.id.slice(0, 8)}</MonoEyebrow>
             <h2 className="mt-2 type-h2 text-text">{drawer.type}</h2>
-            <p className="mt-2 font-data text-[12px] text-text-dim">
+            <p className="mt-2 border-b border-edge pb-2 font-data text-[12px] text-text-dim">
               {drawer.assetName} · {formatClock(drawer.detectedAt)}
             </p>
+
+            <div className="flex-1 overflow-y-auto mt-4 pr-1 space-y-4 font-data text-[12px]">
+              {/* MTTD Stats */}
+              <div className="rounded-sm border border-edge bg-void/40 p-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-text-faint uppercase font-bold text-[10px]">TIME TO DETECT (MTTD)</span>
+                  <span className={cn("font-bold text-[13px] tracking-wider px-1.5 py-0.5 rounded-sm bg-critical/15 text-critical border border-critical/30")}>
+                    {drawer.mttdSec}s (LIVE MATCH)
+                  </span>
+                </div>
+              </div>
+
+              {/* AI Attribution Card */}
+              {drawer.aiVerdict ? (
+                <div className="space-y-4">
+                  <div className="rounded-sm border border-edge bg-void/25 p-3 space-y-2">
+                    <p className="font-bold text-magenta text-[10px] uppercase tracking-wider">👤 Threat Actor Profile</p>
+                    <p className="text-text leading-relaxed italic">
+                      &ldquo;{drawer.aiVerdict.threatActorProfile || "Intent analysis pending..."}&rdquo;
+                    </p>
+                  </div>
+
+                  <div className="rounded-sm border border-edge bg-void/25 p-3 space-y-2">
+                    <p className="font-bold text-watch text-[10px] uppercase tracking-wider">⚔️ Likely Attack Vector</p>
+                    <p className="text-text-dim leading-relaxed">
+                      {drawer.aiVerdict.likelyAttackVector || "Vector analysis pending..."}
+                    </p>
+                  </div>
+
+                  {drawer.aiVerdict.mermaidGraph && (
+                    <div className="rounded-sm border border-edge bg-void/25 p-3 space-y-2">
+                      <p className="font-bold text-live text-[10px] uppercase tracking-wider">📊 Probabilistic Attack Path</p>
+                      <div className="mt-2 bg-void/40 rounded-sm border border-edge/60">
+                        <Mermaid chart={drawer.aiVerdict.mermaidGraph} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-6 text-text-faint italic border border-dashed border-edge rounded-sm">
+                  Threat attribution analysis offline or establishing baseline.
+                </div>
+              )}
+            </div>
+
             {shell.isAnalyst ? (
-              <div className="mt-6 space-y-2">
+              <div className="mt-4 space-y-2 border-t border-edge pt-3">
                 <Button className="w-full" onClick={() => setStatus(drawer.id, "acknowledged")}>
                   Acknowledge
                 </Button>

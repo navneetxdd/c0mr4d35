@@ -358,12 +358,13 @@ export async function fetchIncidents(): Promise<Incident[]> {
   const supabase = await createServerSupabase();
   const { data } = await supabase
     .from("incidents")
-    .select("*, assets(name)")
+    .select("*, assets(name), scans(id, ai_verdict)")
     .order("detected_at", { ascending: false });
   if (!data) return [];
 
   return data.map((row) => {
     const assets = row.assets as { name: string } | null;
+    const scans = row.scans as { id: string; ai_verdict: AiVerdict | null } | null;
     return {
       id: row.id,
       severity: row.severity as Incident["severity"],
@@ -374,6 +375,8 @@ export async function fetchIncidents(): Promise<Incident[]> {
       status: row.status as Incident["status"],
       mttdSec: row.mttd_sec ?? 0,
       assignee: row.assignee,
+      scanId: scans?.id ?? null,
+      aiVerdict: scans?.ai_verdict ?? null,
     };
   });
 }

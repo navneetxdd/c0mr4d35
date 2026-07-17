@@ -24,6 +24,9 @@ export interface AiVerdict {
   summary: string;
   prioritizedRisks: { title: string; why: string }[];
   recommendedActions: string[];
+  threatActorProfile?: string;
+  likelyAttackVector?: string;
+  mermaidGraph?: string;
   error?: string;
 }
 
@@ -43,6 +46,9 @@ function heuristicFallback(scan: ScanResult, reason: string): AiVerdict {
     summary: "AI enrichment unavailable — findings below are authoritative.",
     prioritizedRisks: [],
     recommendedActions: [],
+    threatActorProfile: "Unknown (AI fallback)",
+    likelyAttackVector: "Unknown (AI fallback)",
+    mermaidGraph: "flowchart TD\n  Target-->Scan",
     error: reason,
   };
 }
@@ -81,7 +87,7 @@ function buildPrompt(scan: ScanResult): string {
     omitted ? `(${omitted} lower-severity findings omitted from prompt)` : "",
     "",
     "Return JSON with this exact shape:",
-    `{"verdict":"BASELINE HELD|DRIFT DETECTED|DEFACEMENT|AT RISK","confidence":0.0-1.0,"summary":"one sentence","prioritizedRisks":[{"title":"...","why":"..."}],"recommendedActions":["..."]}`,
+    `{"verdict":"BASELINE HELD|DRIFT DETECTED|DEFACEMENT|AT RISK","confidence":0.0-1.0,"summary":"one sentence","prioritizedRisks":[{"title":"...","why":"..."}],"recommendedActions":["..."],"threatActorProfile":"Describe the likely intent and sophistication of the attacker based on findings (e.g. Magecart script injector, automated scanner, etc.)","likelyAttackVector":"Describe step-by-step how the attacker likely gained entry based on exposed ports/directories or header config","mermaidGraph":"A valid Mermaid flowchart TD string showing the probabilistic attack path (no backticks, just raw string like 'flowchart TD\\n  A-->B')"}`,
     "Do not invent findings. Keep summary under 240 chars.",
   ]
     .filter(Boolean)
@@ -186,6 +192,9 @@ export async function getAiVerdict(scan: ScanResult, apiKeyOverride?: string | n
       recommendedActions: Array.isArray(parsed.recommendedActions)
         ? parsed.recommendedActions.slice(0, 6)
         : [],
+      threatActorProfile: parsed.threatActorProfile,
+      likelyAttackVector: parsed.likelyAttackVector,
+      mermaidGraph: parsed.mermaidGraph,
     };
   } catch (err) {
     const reason = isAbortError(err)

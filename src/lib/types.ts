@@ -127,6 +127,8 @@ export interface Incident {
   status: IncidentStatus;
   mttdSec: number;
   assignee: string | null;
+  scanId?: string | null;
+  aiVerdict?: import("@/lib/ai/gemini").AiVerdict | null;
 }
 
 export interface AuditEntry {
