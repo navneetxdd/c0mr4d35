@@ -10,6 +10,7 @@ import { checkTls, tlsFindings, legacyTlsFindings } from "./tls";
 import { checkDns } from "./dns";
 import { probePaths } from "./paths";
 import { fingerprint, correlateOsv } from "./fingerprint";
+import { buildRemediation, type Remediation } from "./remediate";
 import {
   aggregatePosture,
   postureScore,
@@ -32,12 +33,15 @@ import {
   newScriptOrigins,
   type DefacementScore,
 } from "./defacement-score";
+import { extractIntegrity, diffIntegrity, type ScriptSignal } from "./integrity";
 
 export interface BehaviorBaseline {
   externalScriptOrigins?: string[];
   formActions?: string[];
   openPorts?: number[];
   subdomains?: string[];
+  scripts?: ScriptSignal[];
+  egress?: string[];
 }
 
 export interface ScanInput {
@@ -51,6 +55,8 @@ export interface ScanInput {
   onProgress?: ProgressSink;
   /** Optional Shodan API key (BYOK) for host/DNS enrichment. */
   shodanApiKey?: string | null;
+  /** Whether to perform active TCP socket connections (default: false, passive-first). */
+  activePortScan?: boolean;
 }
 
 export interface ScanSignals {
@@ -59,6 +65,8 @@ export interface ScanSignals {
   hasPasswordInput: boolean;
   openPorts: number[];
   subdomains: string[];
+  scripts: ScriptSignal[];
+  egress: string[];
 }
 
 export interface ScanResult {
@@ -102,6 +110,8 @@ export interface ScanResult {
    * Preliminary inside runScan (DOM/behavior only); persist/adhoc recompute after visual evidence.
    */
   defacement?: DefacementScore;
+  /** Generated copy-paste hardening (CSP + per-stack config); null when nothing to fix. */
+  remediation?: Remediation | null;
   error?: string;
 }
 
@@ -195,6 +205,20 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
     findings.push(...defacementFindings(diff.driftPct, diff.changed));
   }
 
+  const integrityResult = await extractIntegrity(page.body, rootUrl, resolved.hostname);
+  evidenceNotes.push(...integrityResult.notes);
+
+  if (input.baselineBehavior) {
+    const integrityDiff = diffIntegrity(
+      integrityResult.scripts,
+      integrityResult.egress,
+      input.baselineBehavior,
+      rootUrl
+    );
+    findings.push(...integrityDiff.findings);
+    evidenceNotes.push(...integrityDiff.notes);
+  }
+
   if (input.baselineBehavior?.externalScriptOrigins) {
     const prev = new Set(input.baselineBehavior.externalScriptOrigins);
     const added = [...scriptOrigins].filter((o) => !prev.has(o));
@@ -236,10 +260,14 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
   let subdomains: SubdomainResult[] = [];
 
   try {
-    const portProbe = await probePorts(resolved.address || resolved.hostname);
-    ports = portProbe.results;
-    findings.push(...portProbe.findings);
-    evidenceNotes.push(...portProbe.notes);
+    if (input.activePortScan) {
+      const portProbe = await probePorts(resolved.address || resolved.hostname);
+      ports = portProbe.results;
+      findings.push(...portProbe.findings);
+      evidenceNotes.push(...portProbe.notes);
+    } else {
+      evidenceNotes.push("Active port scanning skipped (passive-first).");
+    }
 
     const idb = await lookupInternetDb(resolved.address);
     evidenceNotes.push(...idb.notes);
@@ -344,6 +372,16 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
     findings: deduped,
   });
 
+  const remediation = buildRemediation({
+    finalHost: resolved.hostname,
+    isHttps,
+    fingerprint: fp.family,
+    techStack: fp.components.map((c) => c.family),
+    findings: deduped,
+    externalScriptOrigins: [...scriptOrigins],
+    formActions: [...formActions],
+  });
+
   return {
     ok: true,
     target: rootUrl,
@@ -369,6 +407,8 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
       hasPasswordInput,
       openPorts,
       subdomains: subdomainNames,
+      scripts: integrityResult.scripts,
+      egress: integrityResult.egress,
     },
     findings: deduped,
     html: page.body,
@@ -387,6 +427,7 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
     baselineState: "none",
     evidenceNotes,
     defacement,
+    remediation,
   };
 }
 
@@ -454,6 +495,8 @@ function emptyResult(
       hasPasswordInput: false,
       openPorts: [],
       subdomains: [],
+      scripts: [],
+      egress: [],
     },
     findings: [],
     html: "",

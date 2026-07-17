@@ -33,6 +33,7 @@ const BodySchema = z.object({
   singlePage: z.boolean().optional().default(false),
   withAi: z.boolean().optional().default(true),
   stream: z.boolean().optional().default(true),
+  activePortScan: z.boolean().optional().default(false),
 });
 
 async function authorizeAdhoc(): Promise<
@@ -167,12 +168,19 @@ async function executeAdhocScan(
       ? await loadAdhocBaseline(admin, data.target, userId)
       : null;
 
-  const storedSignals = (storedBaseline?.signals ?? {}) as {
-    externalScriptOrigins?: string[];
-    formActions?: string[];
-    openPorts?: number[];
-    subdomains?: string[];
-  };
+  // Only expose a behavioral baseline when one actually exists. An empty object
+  // ({}) would still be truthy and make diffIntegrity treat every observed
+  // script/egress domain as "newly injected" on a first scan (false CRITICALs).
+  const storedSignals = storedBaseline?.signals
+    ? (storedBaseline.signals as {
+        externalScriptOrigins?: string[];
+        formActions?: string[];
+        openPorts?: number[];
+        subdomains?: string[];
+        scripts?: import("@/lib/scan/integrity").ScriptSignal[];
+        egress?: string[];
+      })
+    : null;
 
   const scan = await runScan({
     target: data.target,
@@ -181,6 +189,7 @@ async function executeAdhocScan(
     singlePage: data.singlePage,
     onProgress,
     shodanApiKey: secrets.shodanApiKey,
+    activePortScan: data.activePortScan,
   });
 
   if (!scan.ok) {

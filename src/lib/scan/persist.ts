@@ -203,6 +203,8 @@ export async function executeScanForAsset(opts: ExecuteScanOptions): Promise<Exe
         formActions?: string[];
         openPorts?: number[];
         subdomains?: string[];
+        scripts?: import("./integrity").ScriptSignal[];
+        egress?: string[];
       }) ?? null,
       singlePage: opts.singlePage ?? false,
       shodanApiKey: secrets.shodanApiKey,

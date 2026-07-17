@@ -24,6 +24,9 @@ export interface AiVerdict {
   summary: string;
   prioritizedRisks: { title: string; why: string }[];
   recommendedActions: string[];
+  threatActorProfile?: string;
+  likelyAttackVector?: string;
+  mermaidGraph?: string;
   error?: string;
 }
 
@@ -123,7 +126,7 @@ function buildPrompt(scan: ScanResult): string {
     "- Weight multi-signal defacement confidence when present.",
     "",
     "Return JSON with this exact shape:",
-    `{"verdict":"BASELINE HELD|DRIFT DETECTED|DEFACEMENT|AT RISK","confidence":0.0-1.0,"summary":"one sentence","prioritizedRisks":[{"title":"...","why":"..."}],"recommendedActions":["..."]}`,
+    `{"verdict":"BASELINE HELD|DRIFT DETECTED|DEFACEMENT|AT RISK","confidence":0.0-1.0,"summary":"one sentence","prioritizedRisks":[{"title":"...","why":"..."}],"recommendedActions":["..."],"threatActorProfile":"Likely intent and sophistication of the attacker based on findings (e.g. Magecart script injector, automated scanner). Empty string if baseline held.","likelyAttackVector":"Step-by-step of how entry was likely gained based on exposed ports/paths/header config. Empty string if baseline held.","mermaidGraph":"A valid Mermaid 'flowchart TD' string showing the probable attack path (raw string, no backticks, e.g. 'flowchart TD\\n  A-->B')"}`,
     "Keep summary under 240 chars.",
   ]
     .filter(Boolean)
@@ -196,6 +199,11 @@ async function generateGeminiJson(
           temperature: 0.2,
           responseMimeType: "application/json",
           maxOutputTokens,
+          // gemini-2.5-flash "thinks" by default and reasoning tokens share the
+          // output budget — that was consuming it and truncating the JSON answer
+          // mid-string ("Unterminated string in JSON"). Disable thinking so the
+          // whole budget goes to the structured output.
+          thinkingConfig: { thinkingBudget: 0 },
         },
       }),
       signal: controller.signal,
@@ -263,6 +271,9 @@ export async function getAiVerdict(scan: ScanResult, apiKeyOverride?: string | n
       recommendedActions: Array.isArray(parsed.recommendedActions)
         ? parsed.recommendedActions.slice(0, 6)
         : [],
+      threatActorProfile: parsed.threatActorProfile,
+      likelyAttackVector: parsed.likelyAttackVector,
+      mermaidGraph: parsed.mermaidGraph,
     };
   } catch (err) {
     const reason = isAbortError(err)

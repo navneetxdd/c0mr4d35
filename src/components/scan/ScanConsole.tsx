@@ -14,9 +14,12 @@ import type { ScanApiResponse, SafeScanResult } from "@/lib/scan/api-types";
 import type { AiVerdict } from "@/lib/ai/gemini";
 import { DefacementConfidencePanel } from "@/components/scan/DefacementConfidencePanel";
 import type { Risk } from "@/lib/scan/risk";
+import type { Remediation, RemediationPlatform } from "@/lib/scan/remediate";
 import { explainPostureScore } from "@/lib/scan/risk";
 import type { ScanStageEvent } from "@/lib/scan/progress";
 import { cn } from "@/lib/format";
+import { SurfaceMap } from "@/components/scan/SurfaceMap";
+import { SupplyChainPanel } from "@/components/scan/SupplyChainPanel";
 
 type RunState =
   | { phase: "idle" }
@@ -234,7 +237,8 @@ function Results({ scan, verdict }: { scan: SafeScanResult; verdict?: AiVerdict 
   const tone =
     scan.posture === "critical" ? "critical" : scan.posture === "watch" ? "watch" : "secure";
   const defacementFindings = scan.findings.filter((f) => f.category === "DEFACEMENT");
-  const hygieneFindings = scan.findings.filter((f) => f.category !== "DEFACEMENT");
+  const supplyChainFindings = scan.findings.filter((f) => f.category === "SUPPLY_CHAIN");
+  const hygieneFindings = scan.findings.filter((f) => f.category !== "DEFACEMENT" && f.category !== "SUPPLY_CHAIN");
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
@@ -280,6 +284,12 @@ function Results({ scan, verdict }: { scan: SafeScanResult; verdict?: AiVerdict 
 
         <EvidencePanel scan={scan} />
         {scan.defacement ? <DefacementConfidencePanel score={scan.defacement} /> : null}
+        <SurfaceMap data={scan} />
+        <SupplyChainPanel
+          scripts={scan.signals.scripts ?? []}
+          egress={scan.signals.egress ?? []}
+          findings={scan.findings}
+        />
         <ReconProofPanel scan={scan} />
         <FindingsPanel
           title={`Defacement signals · ${String(defacementFindings.length).padStart(2, "0")}`}
@@ -287,10 +297,16 @@ function Results({ scan, verdict }: { scan: SafeScanResult; verdict?: AiVerdict 
           empty="No defacement signals — baseline held or first observation."
         />
         <FindingsPanel
+          title={`Supply Chain & Exfil · ${String(supplyChainFindings.length).padStart(2, "0")}`}
+          findings={supplyChainFindings}
+          empty="No supply chain or exfil risks detected."
+        />
+        <FindingsPanel
           title={`Hygiene & recon · ${String(hygieneFindings.length).padStart(2, "0")}`}
           findings={hygieneFindings}
           empty="No hygiene/recon findings."
         />
+        {scan.remediation ? <RemediationPanel remediation={scan.remediation} /> : null}
       </div>
 
       <VerdictPanel verdict={verdict} />
@@ -303,6 +319,135 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div className="rounded-sm border border-edge bg-void/40 px-3 py-2">
       <p className="type-data-sm text-text-faint">{label}</p>
       <p className="mt-0.5 truncate font-data text-[13px] text-text">{value}</p>
+    </div>
+  );
+}
+
+function RemediationPanel({ remediation }: { remediation: Remediation }) {
+  const [platform, setPlatform] = useState<RemediationPlatform>(remediation.primary);
+  const [copied, setCopied] = useState<string | null>(null);
+  const active = remediation.configs.find((c) => c.platform === platform) ?? remediation.configs[0];
+
+  function copy(key: string, text: string) {
+    void navigator.clipboard?.writeText(text).then(() => {
+      setCopied(key);
+      window.setTimeout(() => setCopied((c) => (c === key ? null : c)), 1500);
+    });
+  }
+
+  function download() {
+    const blob = new Blob([active.code], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `datum-hardening.${active.platform}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <section className="panel relative">
+      <div className="border-b border-edge px-4 py-3">
+        <MonoEyebrow index="06">Auto-remediation · self-writing firewall</MonoEyebrow>
+        <p className="mt-2 type-small text-secure">{remediation.summary}</p>
+      </div>
+
+      <div className="space-y-4 px-4 py-4">
+        {remediation.headers.some((h) => h.name === "Content-Security-Policy") ? (
+          <div>
+            <p className="type-label mb-2">Generated Content-Security-Policy</p>
+            <CodeBlock
+              label="Report-Only (deploy this first)"
+              code={remediation.cspReportOnly}
+              copied={copied === "csp-ro"}
+              onCopy={() => copy("csp-ro", remediation.cspReportOnly)}
+            />
+            <div className="mt-2">
+              <CodeBlock
+                label="Enforcing (switch once report-only is clean)"
+                code={remediation.cspEnforce}
+                copied={copied === "csp-en"}
+                onCopy={() => copy("csp-en", remediation.cspEnforce)}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        <div>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="type-label">Server config</p>
+            <div className="flex flex-wrap gap-1">
+              {remediation.configs.map((c) => (
+                <button
+                  key={c.platform}
+                  onClick={() => setPlatform(c.platform)}
+                  className={cn(
+                    "rounded-sm border px-2 py-1 font-data text-[11px] transition-colors",
+                    c.platform === platform
+                      ? "border-scan/60 bg-scan/10 text-scan"
+                      : "border-edge text-text-faint hover:text-text-dim",
+                  )}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <CodeBlock
+            label={active.label}
+            code={active.code}
+            copied={copied === "cfg"}
+            onCopy={() => copy("cfg", active.code)}
+            onDownload={download}
+          />
+        </div>
+
+        <ul className="space-y-1 border-t border-edge pt-3">
+          {remediation.notes.map((n, i) => (
+            <li key={i} className="type-data-sm text-text-faint">
+              → {n}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+}
+
+function CodeBlock({
+  label,
+  code,
+  copied,
+  onCopy,
+  onDownload,
+}: {
+  label: string;
+  code: string;
+  copied: boolean;
+  onCopy: () => void;
+  onDownload?: () => void;
+}) {
+  return (
+    <div className="overflow-hidden rounded-sm border border-edge bg-void/50">
+      <div className="flex items-center justify-between border-b border-edge px-3 py-1.5">
+        <span className="type-data-sm text-text-faint">{label}</span>
+        <div className="flex items-center gap-2">
+          {onDownload ? (
+            <button onClick={onDownload} className="font-data text-[11px] text-text-faint hover:text-text-dim">
+              download
+            </button>
+          ) : null}
+          <button
+            onClick={onCopy}
+            className={cn("font-data text-[11px]", copied ? "text-secure" : "text-scan hover:text-scan/80")}
+          >
+            {copied ? "✓ copied" : "copy"}
+          </button>
+        </div>
+      </div>
+      <pre className="overflow-x-auto px-3 py-2.5 font-data text-[12px] leading-relaxed text-text">
+        <code>{code}</code>
+      </pre>
     </div>
   );
 }
@@ -348,6 +493,8 @@ function EvidencePanel({ scan }: { scan: SafeScanResult }) {
     </section>
   );
 }
+
+
 
 function ReconProofPanel({ scan }: { scan: SafeScanResult }) {
   const openPorts = (scan.ports ?? []).filter((p) => p.state === "open");

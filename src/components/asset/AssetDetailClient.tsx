@@ -158,7 +158,19 @@ export function AssetDetailClient({
 
       <div className="grid gap-4 lg:grid-cols-[1.55fr_0.85fr]">
         <div className="flex flex-col gap-4">
-          <DomDriftPanel evidence={evidence} />
+          <DomDriftPanel
+            evidence={evidence}
+            host={assetView.host}
+            findings={findings.map((f) => ({
+              id: f.id,
+              category: f.group,
+              risk: f.severity.toLowerCase(),
+              title: f.title,
+              detail: f.detail,
+              remediation: f.remediation,
+              evidence: f.evidence ?? null,
+            }))}
+          />
           <ScanHistory entries={history} selectedId={selectedId} onSelect={setSelectedId} />
         </div>
         <div className="flex flex-col gap-4">

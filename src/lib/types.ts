@@ -23,7 +23,8 @@ export type FindingGroup =
   | "EXPOSED PATHS"
   | "CVE"
   | "PORTS"
-  | "SUBDOMAINS";
+  | "SUBDOMAINS"
+  | "SUPPLY_CHAIN";
 
 export interface Asset {
   id: string;
@@ -83,6 +84,8 @@ export interface VisualEvidence {
     ips: string[];
     queriedAt: string;
   }>;
+  scripts?: Array<{ src: string | null; sha256: string }>;
+  egress?: string[];
 }
 
 export interface ChangeRegion {
@@ -124,6 +127,8 @@ export interface Incident {
   status: IncidentStatus;
   mttdSec: number;
   assignee: string | null;
+  scanId?: string | null;
+  aiVerdict?: import("@/lib/ai/gemini").AiVerdict | null;
 }
 
 export interface AuditEntry {
