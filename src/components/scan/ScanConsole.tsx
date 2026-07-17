@@ -18,6 +18,7 @@ import { explainPostureScore } from "@/lib/scan/risk";
 import type { ScanStageEvent } from "@/lib/scan/progress";
 import { cn } from "@/lib/format";
 import { SurfaceMap } from "@/components/scan/SurfaceMap";
+import { SupplyChainPanel } from "@/components/scan/SupplyChainPanel";
 
 type RunState =
   | { phase: "idle" }
@@ -235,7 +236,8 @@ function Results({ scan, verdict }: { scan: SafeScanResult; verdict?: AiVerdict 
   const tone =
     scan.posture === "critical" ? "critical" : scan.posture === "watch" ? "watch" : "secure";
   const defacementFindings = scan.findings.filter((f) => f.category === "DEFACEMENT");
-  const hygieneFindings = scan.findings.filter((f) => f.category !== "DEFACEMENT");
+  const supplyChainFindings = scan.findings.filter((f) => f.category === "SUPPLY_CHAIN");
+  const hygieneFindings = scan.findings.filter((f) => f.category !== "DEFACEMENT" && f.category !== "SUPPLY_CHAIN");
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
@@ -281,10 +283,20 @@ function Results({ scan, verdict }: { scan: SafeScanResult; verdict?: AiVerdict 
 
         <EvidencePanel scan={scan} />
         <SurfaceMap data={scan} />
+        <SupplyChainPanel
+          scripts={scan.signals.scripts ?? []}
+          egress={scan.signals.egress ?? []}
+          findings={scan.findings}
+        />
         <FindingsPanel
           title={`Defacement signals · ${String(defacementFindings.length).padStart(2, "0")}`}
           findings={defacementFindings}
           empty="No defacement signals — baseline held or first observation."
+        />
+        <FindingsPanel
+          title={`Supply Chain & Exfil · ${String(supplyChainFindings.length).padStart(2, "0")}`}
+          findings={supplyChainFindings}
+          empty="No supply chain or exfil risks detected."
         />
         <FindingsPanel
           title={`Hygiene & recon · ${String(hygieneFindings.length).padStart(2, "0")}`}

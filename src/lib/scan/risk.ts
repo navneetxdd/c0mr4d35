@@ -18,7 +18,8 @@ export type FindingCategory =
   | "EXPOSED PATHS"
   | "CVE"
   | "PORTS"
-  | "SUBDOMAINS";
+  | "SUBDOMAINS"
+  | "SUPPLY_CHAIN";
 
 export interface ScanFinding {
   id: string;

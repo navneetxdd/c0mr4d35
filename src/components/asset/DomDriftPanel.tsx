@@ -3,13 +3,23 @@ import { MonoEyebrow } from "@/components/ui/MonoEyebrow";
 import { cn } from "@/lib/format";
 import type { VisualEvidence } from "@/lib/types";
 import { SurfaceMap } from "@/components/scan/SurfaceMap";
+import { SupplyChainPanel } from "@/components/scan/SupplyChainPanel";
 
 interface DomDriftPanelProps {
   evidence: VisualEvidence;
   host: string;
+  findings: Array<{
+    id: string;
+    category: string;
+    risk: string;
+    title: string;
+    detail: string;
+    remediation: string;
+    evidence?: string | null;
+  }>;
 }
 
-export function DomDriftPanel({ evidence, host }: DomDriftPanelProps) {
+export function DomDriftPanel({ evidence, host, findings }: DomDriftPanelProps) {
   const driftPct = evidence.domDriftPct;
   const tone =
     driftPct >= 25 ? "critical" : driftPct >= 8 ? "watch" : "secure";
@@ -63,10 +73,19 @@ export function DomDriftPanel({ evidence, host }: DomDriftPanelProps) {
                 finalHost: host,
                 posture: tone,
                 postureScore: 100 - driftPct,
-                findings: [],
+                findings: findings,
                 ports: evidence.ports,
                 subdomains: evidence.subdomains,
               }}
+            />
+          </div>
+        ) : null}
+        {(evidence.scripts?.length || evidence.egress?.length) ? (
+          <div className="mt-4">
+            <SupplyChainPanel
+              scripts={evidence.scripts ?? []}
+              egress={evidence.egress ?? []}
+              findings={findings}
             />
           </div>
         ) : null}

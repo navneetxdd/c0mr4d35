@@ -342,6 +342,12 @@ export async function fetchAssetDetail(id: string): Promise<AssetDetailData | nu
       subdomains: Array.isArray((latest as { subdomains_json?: unknown } | null)?.subdomains_json)
         ? (((latest as { subdomains_json: VisualEvidence["subdomains"] }).subdomains_json) ?? [])
         : [],
+      scripts: Array.isArray((latest?.signals as { scripts?: unknown } | null)?.scripts)
+        ? (((latest?.signals as { scripts: VisualEvidence["scripts"] }).scripts) ?? [])
+        : [],
+      egress: Array.isArray((latest?.signals as { egress?: unknown } | null)?.egress)
+        ? (((latest?.signals as { egress: VisualEvidence["egress"] }).egress) ?? [])
+        : [],
     },
     aiVerdict: (latest?.ai_verdict as AiVerdict | null) ?? null,
   };

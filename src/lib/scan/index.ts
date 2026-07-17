@@ -28,12 +28,15 @@ import {
   type SubdomainResult,
 } from "./subdomains";
 import { lookupInternetDb, lookupShodanHost } from "./shodan";
+import { extractIntegrity, diffIntegrity, type ScriptSignal } from "./integrity";
 
 export interface BehaviorBaseline {
   externalScriptOrigins?: string[];
   formActions?: string[];
   openPorts?: number[];
   subdomains?: string[];
+  scripts?: ScriptSignal[];
+  egress?: string[];
 }
 
 export interface ScanInput {
@@ -57,6 +60,8 @@ export interface ScanSignals {
   hasPasswordInput: boolean;
   openPorts: number[];
   subdomains: string[];
+  scripts: ScriptSignal[];
+  egress: string[];
 }
 
 export interface ScanResult {
@@ -188,6 +193,20 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
     driftPct = diff.driftPct;
     contentChanged = diff.changed;
     findings.push(...defacementFindings(diff.driftPct, diff.changed));
+  }
+
+  const integrityResult = await extractIntegrity(page.body, rootUrl, resolved.hostname);
+  evidenceNotes.push(...integrityResult.notes);
+
+  if (input.baselineBehavior) {
+    const integrityDiff = diffIntegrity(
+      integrityResult.scripts,
+      integrityResult.egress,
+      input.baselineBehavior,
+      rootUrl
+    );
+    findings.push(...integrityDiff.findings);
+    evidenceNotes.push(...integrityDiff.notes);
   }
 
   if (input.baselineBehavior?.externalScriptOrigins) {
@@ -369,6 +388,8 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
       hasPasswordInput,
       openPorts,
       subdomains: subdomainNames,
+      scripts: integrityResult.scripts,
+      egress: integrityResult.egress,
     },
     findings: deduped,
     html: page.body,
@@ -454,6 +475,8 @@ function emptyResult(
       hasPasswordInput: false,
       openPorts: [],
       subdomains: [],
+      scripts: [],
+      egress: [],
     },
     findings: [],
     html: "",
