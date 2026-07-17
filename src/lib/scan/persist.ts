@@ -1,6 +1,6 @@
 import "server-only";
 import { getAiVerdict } from "@/lib/ai/gemini";
-import { dispatchDiscordAlert } from "@/lib/alerts/discord";
+import { dispatchOutboundAlert } from "@/lib/alerts/dispatch";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { runScan, type ScanResult } from "@/lib/scan";
 import {
@@ -77,21 +77,43 @@ async function maybeAlert(
   assetName: string,
   scan: ScanResult,
 ) {
+  const openIncident = shouldOpenIncident(scan);
   const critical = scan.findings.filter((f) => f.risk === "critical" || f.category === "DEFACEMENT");
   const high = scan.findings.filter((f) => f.risk === "high");
-  const notify = critical.length > 0 || high.length > 0 || scan.driftPct >= 8;
+  // Always notify when the multi-signal defacement gate opens an incident;
+  // also keep hygiene alerts for critical/high findings and material drift.
+  const notify =
+    openIncident || critical.length > 0 || high.length > 0 || scan.driftPct >= 8;
   if (!notify) return;
 
   const top = critical[0] ?? high[0];
-  const severity = top?.risk ?? (scan.driftPct >= 25 ? "critical" : "high");
-  const message = top
-    ? `${assetName}: ${top.title}`
-    : `${assetName}: content drift ${scan.driftPct}%`;
+  const severity: "critical" | "high" =
+    openIncident || top?.risk === "critical" || (scan.driftPct >= 25 && !top)
+      ? "critical"
+      : "high";
+  const defaceScore = scan.defacement?.score;
+  const message = openIncident
+    ? `${assetName}: DEFACEMENT suspected` +
+      (defaceScore != null ? ` (confidence ${defaceScore}/100)` : "") +
+      (top ? ` — ${top.title}` : ` — content drift ${scan.driftPct}%`)
+    : top
+      ? `${assetName}: ${top.title}`
+      : `${assetName}: content drift ${scan.driftPct}%`;
 
-  const delivered = await dispatchDiscordAlert(
-    `Datum · ${severity.toUpperCase()}`,
-    message,
-    severity as "critical" | "high",
+  const appUrl = (
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    process.env.NEXT_PUBLIC_HOSTED_APP_URL?.trim() ||
+    ""
+  ).replace(/\/$/, "");
+  const body =
+    appUrl.length > 0
+      ? `${message}\nOpen: ${appUrl}/assets/${assetId}`
+      : message;
+
+  const { delivered, channel } = await dispatchOutboundAlert(
+    openIncident ? "Datum · DEFACEMENT" : `Datum · ${severity.toUpperCase()}`,
+    body,
+    severity,
   );
 
   await admin.from("alerts").insert({
@@ -99,11 +121,10 @@ async function maybeAlert(
     scan_id: scanId,
     severity,
     message,
-    channel: delivered ? "discord" : "in-app",
+    channel,
     delivered,
   });
 
-  const openIncident = shouldOpenIncident(scan);
   if (openIncident) {
     const { data: existing } = await admin
       .from("incidents")

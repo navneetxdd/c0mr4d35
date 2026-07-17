@@ -1,0 +1,64 @@
+name: Scheduled defacement scan
+
+# Drives recurring baseline-integrity scans by calling the app's cron endpoint,
+# which drains the scan_jobs queue and scans any asset whose interval is due.
+#
+# Vercel Hobby cannot run sub-daily cron, so scheduling lives here instead.
+# GitHub Actions schedules run at ~5-minute minimum granularity and timing is
+# best-effort. For true 1-minute cadence, point an external scheduler
+# (e.g. cron-job.org) at the same endpoint with the same Authorization header.
+#
+# Required repository configuration (Settings → Secrets and variables → Actions):
+#   - Variable  SCAN_CRON_URL : full URL, e.g. https://systemsiege.vercel.app/api/cron/scan
+#   - Secret    CRON_SECRET   : must match the CRON_SECRET env var on the deployment
+#
+# IMPORTANT — Vercel Attack Challenge Mode:
+#   If the deployment has Attack Challenge Mode / Bot Management enabled, it
+#   returns HTTP 429 (X-Vercel-Mitigated: challenge) to non-browser callers and
+#   this workflow will fail. Add a Vercel Firewall bypass rule for the path
+#   /api/cron/scan (it is already authenticated by the CRON_SECRET bearer), or
+#   disable Attack Challenge Mode. Otherwise no automated caller can reach it.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: scheduled-scan
+  cancel-in-progress: false
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validate configuration
+        env:
+          SCAN_CRON_URL: ${{ vars.SCAN_CRON_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$SCAN_CRON_URL" ]; then
+            echo "::error::Missing repository variable SCAN_CRON_URL"
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::Missing repository secret CRON_SECRET"
+            exit 1
+          fi
+
+      - name: Trigger scan run
+        env:
+          SCAN_CRON_URL: ${{ vars.SCAN_CRON_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          status=$(curl -sS -o /tmp/body.txt -w "%{http_code}" \
+            -X POST "$SCAN_CRON_URL" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            --max-time 300)
+          echo "HTTP $status"
+          echo "Response: $(cat /tmp/body.txt)"
+          if [ "$status" != "200" ]; then
+            echo "::error::Cron endpoint returned HTTP $status"
+            exit 1
+          fi

@@ -10,7 +10,8 @@ export default async function SettingsPage() {
   const byok = await getByokStatus();
   const supabaseRef =
     process.env.NEXT_PUBLIC_SUPABASE_URL?.match(/https:\/\/([^.]+)/)?.[1] ?? "not set";
-  const discord = Boolean(process.env.DISCORD_WEBHOOK_URL);
+  const discord = Boolean(process.env.DISCORD_WEBHOOK_URL?.trim());
+  const slack = Boolean(process.env.SLACK_WEBHOOK_URL?.trim());
   const cron = Boolean(process.env.CRON_SECRET);
 
   return (
@@ -35,6 +36,7 @@ export default async function SettingsPage() {
         />
         <Row label="Shodan (account)" value={byok.shodanConfigured ? "configured" : "not configured"} />
         <Row label="Discord alerts" value={discord ? "configured" : "not configured"} />
+        <Row label="Slack alerts" value={slack ? "configured" : "not configured"} />
         <Row label="Cron scheduler" value={cron ? "configured" : "not configured"} />
         <Row label="Build" value={BUILD_HASH} />
         <Row label="Theme" value="DARK · NOC (locked)" />
