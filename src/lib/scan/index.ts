@@ -47,6 +47,8 @@ export interface ScanInput {
   onProgress?: ProgressSink;
   /** Optional Shodan API key (BYOK) for host/DNS enrichment. */
   shodanApiKey?: string | null;
+  /** Whether to perform active TCP socket connections (default: false, passive-first). */
+  activePortScan?: boolean;
 }
 
 export interface ScanSignals {
@@ -229,10 +231,14 @@ export async function runScan(input: ScanInput): Promise<ScanResult> {
   let subdomains: SubdomainResult[] = [];
 
   try {
-    const portProbe = await probePorts(resolved.address || resolved.hostname);
-    ports = portProbe.results;
-    findings.push(...portProbe.findings);
-    evidenceNotes.push(...portProbe.notes);
+    if (input.activePortScan) {
+      const portProbe = await probePorts(resolved.address || resolved.hostname);
+      ports = portProbe.results;
+      findings.push(...portProbe.findings);
+      evidenceNotes.push(...portProbe.notes);
+    } else {
+      evidenceNotes.push("Active port scanning skipped (passive-first).");
+    }
 
     const idb = await lookupInternetDb(resolved.address);
     evidenceNotes.push(...idb.notes);

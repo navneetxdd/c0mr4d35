@@ -17,6 +17,7 @@ import type { Remediation, RemediationPlatform } from "@/lib/scan/remediate";
 import { explainPostureScore } from "@/lib/scan/risk";
 import type { ScanStageEvent } from "@/lib/scan/progress";
 import { cn } from "@/lib/format";
+import { SurfaceMap } from "@/components/scan/SurfaceMap";
 
 type RunState =
   | { phase: "idle" }
@@ -279,7 +280,7 @@ function Results({ scan, verdict }: { scan: SafeScanResult; verdict?: AiVerdict 
         </section>
 
         <EvidencePanel scan={scan} />
-        <ReconProofPanel scan={scan} />
+        <SurfaceMap data={scan} />
         <FindingsPanel
           title={`Defacement signals · ${String(defacementFindings.length).padStart(2, "0")}`}
           findings={defacementFindings}
@@ -478,71 +479,7 @@ function EvidencePanel({ scan }: { scan: SafeScanResult }) {
   );
 }
 
-function ReconProofPanel({ scan }: { scan: SafeScanResult }) {
-  const openPorts = (scan.ports ?? []).filter((p) => p.state === "open");
-  const subs = scan.subdomains ?? [];
-  if (!openPorts.length && !subs.length) return null;
 
-  return (
-    <section className="panel p-4">
-      <MonoEyebrow index="02">Live recon proof</MonoEyebrow>
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <div className="overflow-auto rounded-sm border border-edge">
-          <p className="border-b border-edge px-3 py-2 type-label">Open ports (TCP + InternetDB/Shodan)</p>
-          {openPorts.length ? (
-            <table className="w-full text-left font-data text-[11px]">
-              <thead className="text-text-faint">
-                <tr>
-                  <th className="px-3 py-1">PORT</th>
-                  <th className="px-3 py-1">SOURCE</th>
-                  <th className="px-3 py-1">SEEN</th>
-                </tr>
-              </thead>
-              <tbody>
-                {openPorts.map((p) => (
-                  <tr key={p.port} className="border-t border-edge">
-                    <td className="px-3 py-1 text-text">{p.port}</td>
-                    <td className="px-3 py-1 text-text">
-                      {p.rttMs === 0 ? "InternetDB/Shodan index" : `TCP ${p.rttMs}ms`}
-                    </td>
-                    <td className="px-3 py-1 text-text-faint">{p.probedAt}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="px-3 py-3 font-data text-[11px] text-text-faint">No open ports in probed set.</p>
-          )}
-        </div>
-        <div className="overflow-auto rounded-sm border border-edge">
-          <p className="border-b border-edge px-3 py-2 type-label">Subdomains</p>
-          {subs.length ? (
-            <table className="w-full text-left font-data text-[11px]">
-              <thead className="text-text-faint">
-                <tr>
-                  <th className="px-3 py-1">NAME</th>
-                  <th className="px-3 py-1">SOURCE</th>
-                  <th className="px-3 py-1">IPS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {subs.slice(0, 30).map((s) => (
-                  <tr key={s.subdomain} className="border-t border-edge">
-                    <td className="px-3 py-1 text-text">{s.subdomain}</td>
-                    <td className="px-3 py-1 text-text">{s.source}</td>
-                    <td className="px-3 py-1 text-text-faint">{s.ips.join(", ") || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="px-3 py-3 font-data text-[11px] text-text-faint">No subdomains discovered.</p>
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
 
 function FindingsPanel({
   title,

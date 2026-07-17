@@ -128,7 +128,12 @@ async function generateGeminiJson(apiKey: string, prompt: string): Promise<strin
         generationConfig: {
           temperature: 0.2,
           responseMimeType: "application/json",
-          maxOutputTokens: 1024,
+          maxOutputTokens: 2048,
+          // gemini-2.5-flash "thinks" by default and reasoning tokens share this
+          // budget — that was consuming it and truncating the JSON answer
+          // mid-string ("Unterminated string in JSON"). Disable thinking so the
+          // whole budget goes to the structured output.
+          thinkingConfig: { thinkingBudget: 0 },
         },
       }),
       signal: controller.signal,
@@ -153,13 +158,24 @@ async function generateGeminiJson(apiKey: string, prompt: string): Promise<strin
   }
 }
 
+/** Tolerate a model that wraps JSON in ```fences``` or adds stray prose. */
+function extractJson(text: string): string {
+  const trimmed = text.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) return fenced[1].trim();
+  const first = trimmed.indexOf("{");
+  const last = trimmed.lastIndexOf("}");
+  if (first !== -1 && last > first) return trimmed.slice(first, last + 1);
+  return trimmed;
+}
+
 export async function getAiVerdict(scan: ScanResult, apiKeyOverride?: string | null): Promise<AiVerdict> {
   const apiKey = apiKeyOverride?.trim() || process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) return heuristicFallback(scan, "Gemini API key not configured — add one in Settings");
 
   try {
     const text = await generateGeminiJson(apiKey, buildPrompt(scan));
-    const parsed = JSON.parse(text) as Partial<AiVerdict>;
+    const parsed = JSON.parse(extractJson(text)) as Partial<AiVerdict>;
 
     return {
       available: true,

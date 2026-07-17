@@ -32,6 +32,7 @@ const BodySchema = z.object({
   singlePage: z.boolean().optional().default(false),
   withAi: z.boolean().optional().default(true),
   stream: z.boolean().optional().default(true),
+  activePortScan: z.boolean().optional().default(false),
 });
 
 async function authorizeAdhoc(): Promise<
@@ -180,6 +181,7 @@ async function executeAdhocScan(
     singlePage: data.singlePage,
     onProgress,
     shodanApiKey: secrets.shodanApiKey,
+    activePortScan: data.activePortScan,
   });
 
   if (!scan.ok) {

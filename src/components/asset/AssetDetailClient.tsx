@@ -152,7 +152,7 @@ export function AssetDetailClient({
 
       <div className="grid gap-4 lg:grid-cols-[1.55fr_0.85fr]">
         <div className="flex flex-col gap-4">
-          <DomDriftPanel evidence={evidence} />
+          <DomDriftPanel evidence={evidence} host={assetView.host} />
           <ScanHistory entries={history} selectedId={selectedId} onSelect={setSelectedId} />
         </div>
         <div className="flex flex-col gap-4">
