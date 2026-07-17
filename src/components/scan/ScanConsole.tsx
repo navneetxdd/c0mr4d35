@@ -242,7 +242,7 @@ function Results({ scan, verdict }: { scan: SafeScanResult; verdict?: AiVerdict 
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1.4fr_0.9fr]">
-      <div className="flex flex-col gap-4">
+      <div className="flex min-w-0 flex-col gap-4">
         <section className={cn("panel relative p-5", tone === "critical" && "glow-critical")}>
           <RegistrationMarks />
           <div className="flex flex-wrap items-end justify-between gap-3">

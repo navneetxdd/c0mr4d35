@@ -157,7 +157,7 @@ export function AssetDetailClient({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.55fr_0.85fr]">
-        <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
           <DomDriftPanel
             evidence={evidence}
             host={assetView.host}
@@ -173,7 +173,7 @@ export function AssetDetailClient({
           />
           <ScanHistory entries={history} selectedId={selectedId} onSelect={setSelectedId} />
         </div>
-        <div className="flex flex-col gap-4">
+        <div className="flex min-w-0 flex-col gap-4">
           {defacement ? <DefacementConfidencePanel score={defacement} eyebrowIndex="02" /> : null}
           <AssetVerdictPanel verdict={showAi ? aiVerdict : null} />
           <FindingsList findings={findings} />
