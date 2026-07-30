@@ -26,6 +26,12 @@ export interface ExecuteScanOptions {
   establishBaseline?: boolean;
   singlePage?: boolean;
   withAi?: boolean;
+  /**
+   * Skip Playwright screenshot/favicon capture. Used by the GitHub Actions
+   * cron path so the Vercel Hobby function can finish inside its duration cap.
+   * Content/DOM drift still runs.
+   */
+  skipEvidence?: boolean;
 }
 
 export interface ExecuteScanResult {
@@ -222,36 +228,54 @@ export async function executeScanForAsset(opts: ExecuteScanOptions): Promise<Exe
       return { scanId, ok: false, error: scan.error ?? "Scan failed" };
     }
 
-    const evidence = await collectScanEvidence({
-      admin,
-      storageBasePath: `assets/${opts.assetId}/scans/${scanId}`,
-      targetUrl: scan.target,
-      html: scan.html,
-      baseline: baseline
-        ? {
-            screenshotPath: baseline.screenshot_path as string | null,
-            faviconHash: baseline.favicon_hash as string | null,
-          }
-        : null,
-    });
+    if (opts.skipEvidence) {
+      scan.visualDriftPct = null;
+      scan.screenshotPath = null;
+      scan.baselineScreenshotPath = (baseline?.screenshot_path as string | null) ?? null;
+      scan.diffPath = null;
+      scan.screenshotUrl = null;
+      scan.baselineScreenshotUrl = null;
+      scan.diffUrl = null;
+      scan.faviconHash = (baseline?.favicon_hash as string | null) ?? null;
+      scan.faviconChanged = false;
+      scan.faviconUrl = null;
+      scan.baselineState = baseline ? "reused" : "created";
+      scan.evidenceNotes = ["Cron lite mode: visual/favicon evidence skipped to fit serverless duration."];
+      scan.posture = aggregatePosture(scan.findings);
+      scan.postureScore = postureScore(scan.findings);
+      scan.severityCounts = countBySeverity(scan.findings);
+    } else {
+      const evidence = await collectScanEvidence({
+        admin,
+        storageBasePath: `assets/${opts.assetId}/scans/${scanId}`,
+        targetUrl: scan.target,
+        html: scan.html,
+        baseline: baseline
+          ? {
+              screenshotPath: baseline.screenshot_path as string | null,
+              faviconHash: baseline.favicon_hash as string | null,
+            }
+          : null,
+      });
 
-    const mergedFindings = dedupeFindings([...scan.findings, ...evidence.extraFindings]);
-    scan.findings = mergedFindings;
-    scan.posture = aggregatePosture(mergedFindings);
-    scan.postureScore = postureScore(mergedFindings);
-    scan.severityCounts = countBySeverity(mergedFindings);
-    scan.visualDriftPct = evidence.visualDriftPct;
-    scan.screenshotPath = evidence.screenshotPath;
-    scan.baselineScreenshotPath = evidence.baselineScreenshotPath;
-    scan.diffPath = evidence.diffPath;
-    scan.screenshotUrl = evidence.screenshotUrl;
-    scan.baselineScreenshotUrl = evidence.baselineScreenshotUrl;
-    scan.diffUrl = evidence.diffUrl;
-    scan.faviconHash = evidence.faviconHash;
-    scan.faviconChanged = evidence.faviconChanged;
-    scan.faviconUrl = evidence.faviconUrl;
-    scan.baselineState = baseline ? "reused" : "created";
-    scan.evidenceNotes = evidence.notes;
+      const mergedFindings = dedupeFindings([...scan.findings, ...evidence.extraFindings]);
+      scan.findings = mergedFindings;
+      scan.posture = aggregatePosture(mergedFindings);
+      scan.postureScore = postureScore(mergedFindings);
+      scan.severityCounts = countBySeverity(mergedFindings);
+      scan.visualDriftPct = evidence.visualDriftPct;
+      scan.screenshotPath = evidence.screenshotPath;
+      scan.baselineScreenshotPath = evidence.baselineScreenshotPath;
+      scan.diffPath = evidence.diffPath;
+      scan.screenshotUrl = evidence.screenshotUrl;
+      scan.baselineScreenshotUrl = evidence.baselineScreenshotUrl;
+      scan.diffUrl = evidence.diffUrl;
+      scan.faviconHash = evidence.faviconHash;
+      scan.faviconChanged = evidence.faviconChanged;
+      scan.faviconUrl = evidence.faviconUrl;
+      scan.baselineState = baseline ? "reused" : "created";
+      scan.evidenceNotes = evidence.notes;
+    }
 
     const baselineScripts = (baseline?.signals as { externalScriptOrigins?: string[] } | null)
       ?.externalScriptOrigins;
@@ -300,8 +324,7 @@ export async function executeScanForAsset(opts: ExecuteScanOptions): Promise<Exe
     const shouldBaseline =
       opts.establishBaseline ||
       !baseline ||
-      !baseline.screenshot_path ||
-      !baseline.favicon_hash;
+      (!opts.skipEvidence && (!baseline.screenshot_path || !baseline.favicon_hash));
     if (shouldBaseline && scan.html) {
       await admin.from("baselines").insert({
         asset_id: opts.assetId,
@@ -334,9 +357,30 @@ export async function executeScanForAsset(opts: ExecuteScanOptions): Promise<Exe
     return { scanId, ok: false, error: "Scan engine failure" };
   }
 }
+function raceWithBudget<T>(promise: Promise<T>, budgetMs: number, fallback: T): Promise<T> {
+  if (budgetMs <= 0) return Promise.resolve(fallback);
+  return new Promise<T>((resolve) => {
+    const timer = setTimeout(() => resolve(fallback), budgetMs);
+    promise
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch(() => {
+        clearTimeout(timer);
+        resolve(fallback);
+      });
+  });
+}
+
 /** Processes pending scan_jobs rows (leased atomically). */
-export async function drainScanJobs(limit = 5): Promise<number> {
+export async function drainScanJobs(
+  limit = 5,
+  opts?: { budgetMs?: number; cronLite?: boolean },
+): Promise<number> {
   const admin = createAdminClient();
+  const deadline = Date.now() + (opts?.budgetMs ?? 50_000);
+  const cronLite = opts?.cronLite === true;
 
   const { data: jobs } = await admin
     .from("scan_jobs")
@@ -349,6 +393,9 @@ export async function drainScanJobs(limit = 5): Promise<number> {
 
   let processed = 0;
   for (const job of jobs) {
+    const remaining = deadline - Date.now();
+    if (remaining < 3_000) break;
+
     const leaseUntil = new Date(Date.now() + 5 * 60_000).toISOString();
     const { data: leased } = await admin
       .from("scan_jobs")
@@ -359,12 +406,29 @@ export async function drainScanJobs(limit = 5): Promise<number> {
       .maybeSingle();
     if (!leased) continue;
 
-    const result = await executeScanForAsset({
-      assetId: job.asset_id,
-      trigger: job.trigger as "manual" | "cron",
-      userId: job.requested_by,
-      establishBaseline: false,
-    });
+    const isCron = job.trigger === "cron" || cronLite;
+    const result = await raceWithBudget(
+      executeScanForAsset({
+        assetId: job.asset_id,
+        trigger: job.trigger as "manual" | "cron",
+        userId: job.requested_by,
+        establishBaseline: false,
+        singlePage: isCron,
+        withAi: !isCron,
+        skipEvidence: isCron,
+      }),
+      remaining - 1_000,
+      { scanId: "", ok: false, error: "Scan budget exceeded" },
+    );
+
+    if (!result.ok && result.error === "Scan budget exceeded") {
+      // Release lease so the next cron tick can retry instead of leaving it stuck.
+      await admin
+        .from("scan_jobs")
+        .update({ status: "pending", lease_until: null })
+        .eq("id", job.id);
+      break;
+    }
 
     await admin
       .from("scan_jobs")
@@ -375,8 +439,12 @@ export async function drainScanJobs(limit = 5): Promise<number> {
   return processed;
 }
 
-/** Cron: scan assets with monitoring_enabled due by interval. */
-export async function scanDueAssets(limit = 5): Promise<number> {
+/**
+ * Enqueue monitoring-enabled assets whose scan interval is due.
+ * Does not run scans inline — the cron handler drains one job per tick so
+ * the serverless function stays under Vercel's duration limit.
+ */
+export async function enqueueDueAssets(limit = 10): Promise<number> {
   const admin = createAdminClient();
   const { data: assets } = await admin
     .from("assets")
@@ -392,14 +460,27 @@ export async function scanDueAssets(limit = 5): Promise<number> {
     return elapsed >= (a.scan_interval_min ?? 60) * 60_000;
   });
 
-  let processed = 0;
+  let enqueued = 0;
   for (const asset of due.slice(0, limit)) {
-    await executeScanForAsset({
-      assetId: asset.id,
+    const { data: existing } = await admin
+      .from("scan_jobs")
+      .select("id")
+      .eq("asset_id", asset.id)
+      .in("status", ["pending", "leased"])
+      .limit(1);
+    if (existing?.length) continue;
+
+    const { error } = await admin.from("scan_jobs").insert({
+      asset_id: asset.id,
       trigger: "cron",
-      establishBaseline: false,
+      status: "pending",
     });
-    processed += 1;
+    if (!error) enqueued += 1;
   }
-  return processed;
+  return enqueued;
+}
+
+/** @deprecated Prefer enqueueDueAssets + drainScanJobs for cron. */
+export async function scanDueAssets(limit = 5): Promise<number> {
+  return enqueueDueAssets(limit);
 }

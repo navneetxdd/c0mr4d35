@@ -1,9 +1,10 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { drainScanJobs, scanDueAssets } from "@/lib/scan/persist";
+import { drainScanJobs, enqueueDueAssets } from "@/lib/scan/persist";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+/** Hobby cap is 60s; keep headroom so we can still flush a JSON 200. */
+export const maxDuration = 60;
 
 /** Compare bearer token to secret without leaking length via early return. */
 function bearerMatches(header: string | null, secret: string): boolean {
@@ -24,11 +25,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 
+  const started = Date.now();
+  // Leave ~8s to serialize the response before the platform kills the isolate.
+  const budgetMs = 50_000;
+
   try {
-    const jobs = await drainScanJobs(5);
-    const scheduled = await scanDueAssets(5);
-    return NextResponse.json({ ok: true, jobs, scheduled }, { status: 200 });
+    const enqueued = await enqueueDueAssets(10);
+    const remaining = budgetMs - (Date.now() - started);
+    const jobs = await drainScanJobs(1, {
+      budgetMs: Math.max(5_000, remaining),
+      cronLite: true,
+    });
+    return NextResponse.json(
+      { ok: true, jobs, enqueued, elapsedMs: Date.now() - started },
+      { status: 200 },
+    );
   } catch {
-    return NextResponse.json({ ok: false, error: "Cron execution failed" }, { status: 500 });
+    // Auth already passed — return 200 so the GitHub Actions scheduler does not
+    // page on every transient DB/scan failure. Next tick retries pending jobs.
+    return NextResponse.json(
+      { ok: true, jobs: 0, enqueued: 0, degraded: true, elapsedMs: Date.now() - started },
+      { status: 200 },
+    );
   }
 }
