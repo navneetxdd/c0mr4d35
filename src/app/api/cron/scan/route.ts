@@ -1,9 +1,9 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { drainScanJobs, enqueueDueAssets } from "@/lib/scan/persist";
 
 export const runtime = "nodejs";
-/** Hobby cap is 60s; keep headroom so we can still flush a JSON 200. */
+/** Hobby cap is 60s; enqueue returns immediately, drain continues via after(). */
 export const maxDuration = 60;
 
 /** Compare bearer token to secret without leaking length via early return. */
@@ -26,23 +26,25 @@ export async function POST(req: NextRequest) {
   }
 
   const started = Date.now();
-  // Leave ~8s to serialize the response before the platform kills the isolate.
-  const budgetMs = 50_000;
 
   try {
+    // Enqueue is cheap DB work — always finish before responding so GitHub Actions
+    // gets HTTP 200 even when Playwright/scan work would exceed the platform limit.
     const enqueued = await enqueueDueAssets(10);
-    const remaining = budgetMs - (Date.now() - started);
-    const jobs = await drainScanJobs(1, {
-      budgetMs: Math.max(5_000, remaining),
-      cronLite: true,
+
+    after(async () => {
+      try {
+        await drainScanJobs(1, { budgetMs: 45_000, cronLite: true });
+      } catch {
+        // Best-effort background drain; next tick retries pending jobs.
+      }
     });
+
     return NextResponse.json(
-      { ok: true, jobs, enqueued, elapsedMs: Date.now() - started },
+      { ok: true, jobs: 0, enqueued, deferred: true, elapsedMs: Date.now() - started },
       { status: 200 },
     );
   } catch {
-    // Auth already passed — return 200 so the GitHub Actions scheduler does not
-    // page on every transient DB/scan failure. Next tick retries pending jobs.
     return NextResponse.json(
       { ok: true, jobs: 0, enqueued: 0, degraded: true, elapsedMs: Date.now() - started },
       { status: 200 },
