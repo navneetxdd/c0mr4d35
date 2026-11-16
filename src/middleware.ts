@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { OPEN_CONSOLE_ACCESS } from "@/lib/auth/open-access-flag";
 import { safeRedirectPath } from "@/lib/auth/safe-redirect";
 import { getSupabaseAnonEnv } from "@/lib/supabase/env";
 import { buildCspHeader } from "@/lib/security/csp";
@@ -16,6 +17,9 @@ import { buildCspHeader } from "@/lib/security/csp";
  *
  * Also mints a per-request CSP nonce (script-src) so production does not need
  * 'unsafe-inline' for scripts.
+ *
+ * HIDDEN (restore later): when OPEN_CONSOLE_ACCESS is true, the login gate below
+ * is skipped (code kept, not deleted). Set OPEN_CONSOLE_ACCESS=false to restore.
  */
 const PUBLIC_PATHS = ["/login", "/auth"];
 
@@ -58,8 +62,22 @@ export async function middleware(request: NextRequest) {
     csp,
   );
 
-  const { url, anonKey } = getSupabaseAnonEnv();
   const { pathname } = request.nextUrl;
+
+  // HIDDEN (restore later): open-console bypass — login gate kept below but skipped.
+  // To restore auth: set OPEN_CONSOLE_ACCESS=false in open-access-flag.ts (do not delete this block's sibling).
+  if (OPEN_CONSOLE_ACCESS) {
+    if (pathname === "/login" || pathname.startsWith("/login/")) {
+      const redirect = request.nextUrl.clone();
+      redirect.pathname = "/";
+      redirect.search = "";
+      return applyCsp(NextResponse.redirect(redirect), csp);
+    }
+    return response;
+  }
+
+  /* HIDDEN (restore later) — original login / session gate. Active again when OPEN_CONSOLE_ACCESS is false. */
+  const { url, anonKey } = getSupabaseAnonEnv();
 
   if (!url || !anonKey) {
     if (isPublic(pathname)) return response;

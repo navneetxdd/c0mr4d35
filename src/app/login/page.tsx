@@ -7,6 +7,7 @@ import { signInAction, signUpAction, type AuthActionState } from "@/app/actions/
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { RegistrationMarks } from "@/components/ui/RegistrationMarks";
+import { OPEN_CONSOLE_ACCESS } from "@/lib/auth/open-access-flag";
 import { BUILD_HASH } from "@/lib/build";
 import { cn } from "@/lib/format";
 import { TerminalLogs } from "@/components/ui/TerminalLogs";
@@ -43,6 +44,7 @@ export default function LoginPage() {
 }
 
 function AuthPage() {
+  const router = useRouter();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   // Password managers inject styles/buttons into email/password fields before
   // React hydrates, which mismatches SSR HTML. Render the form only after mount.
@@ -51,6 +53,20 @@ function AuthPage() {
   useEffect(() => {
     setFormReady(true);
   }, []);
+
+  // HIDDEN (restore later): login UI temporarily bypassed for open console access (admin).
+  // To restore: set OPEN_CONSOLE_ACCESS=false and delete this early-return block.
+  // The SignInForm / SignUpForm code below is intentionally kept, not deleted.
+  useEffect(() => {
+    if (OPEN_CONSOLE_ACCESS) router.replace("/");
+  }, [router]);
+  if (OPEN_CONSOLE_ACCESS) {
+    return (
+      <div className="flex min-h-[100dvh] items-center justify-center bg-void font-data text-sm text-live/70">
+        Opening console…
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-[100dvh] w-full overflow-hidden bg-void bg-grid">

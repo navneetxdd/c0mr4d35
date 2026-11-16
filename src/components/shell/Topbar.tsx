@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { PostureChip } from "@/components/ui/PostureChip";
 import { useToast } from "@/components/ui/Toast";
 import { signOutAction } from "@/app/actions/datum";
+import { OPEN_CONSOLE_ACCESS } from "@/lib/auth/open-access-flag";
 import type { AppRole } from "@/lib/supabase/types";
 import { cn } from "@/lib/format";
 
@@ -33,6 +34,12 @@ export function Topbar({
   const router = useRouter();
 
   async function handleSignOut() {
+    // HIDDEN (restore later): open console has no session — keep Sign out UI but skip login redirect.
+    if (OPEN_CONSOLE_ACCESS) {
+      router.push("/");
+      router.refresh();
+      return;
+    }
     await signOutAction();
     router.push("/login");
     router.refresh();

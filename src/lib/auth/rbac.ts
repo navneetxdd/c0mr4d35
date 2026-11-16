@@ -1,3 +1,4 @@
+import { OPEN_CONSOLE_ACCESS, resolveOpenAccessAdmin } from "@/lib/auth/open-access";
 import { createServerSupabase } from "@/lib/supabase/server";
 import { ROLE_RANK, type AppRole, type Profile } from "@/lib/supabase/types";
 
@@ -9,6 +10,11 @@ import { ROLE_RANK, type AppRole, type Profile } from "@/lib/supabase/types";
  */
 
 export async function getSessionProfile(): Promise<Profile | null> {
+  // HIDDEN (restore later): open-console bypass — remove this block to require a real session again.
+  if (OPEN_CONSOLE_ACCESS) {
+    return resolveOpenAccessAdmin();
+  }
+
   const supabase = await createServerSupabase();
   const {
     data: { user },

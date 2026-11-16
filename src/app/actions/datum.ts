@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabase } from "@/lib/supabase/server";
+import { OPEN_CONSOLE_ACCESS } from "@/lib/auth/open-access-flag";
 import { ForbiddenError, requireRole } from "@/lib/auth/require";
 import { checkRateLimit } from "@/lib/auth/rate-limit";
 import { executeScanForAsset } from "@/lib/scan/persist";
@@ -161,6 +162,8 @@ export async function verifyAuditChain(): Promise<{ ok: boolean; message: string
 }
 
 export async function signOutAction() {
+  // HIDDEN (restore later): open console has no user session to clear.
+  if (OPEN_CONSOLE_ACCESS) return;
   const supabase = await createServerSupabase();
   await supabase.auth.signOut();
 }

@@ -1,4 +1,5 @@
 import "server-only";
+import { OPEN_CONSOLE_ACCESS, resolveOpenAccessAdmin } from "@/lib/auth/open-access";
 import { hasRole } from "@/lib/auth/rbac";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createServerSupabase } from "@/lib/supabase/server";
@@ -399,6 +400,10 @@ export async function fetchMembers(): Promise<Member[]> {
 }
 
 export async function fetchCurrentProfile(): Promise<Profile | null> {
+  // HIDDEN (restore later): open-console bypass — remove this block to require a real session.
+  if (OPEN_CONSOLE_ACCESS) {
+    return resolveOpenAccessAdmin();
+  }
   if (!supabaseConfigured()) return null;
   const supabase = await createServerSupabase();
   const {
@@ -460,7 +465,8 @@ export async function fetchShellContext(): Promise<ShellContext> {
     watchCount: assets.filter((a) => a.posture === "watch" || a.posture === "critical").length,
     telemetry,
     profile: profile ? { email: profile.email ?? "", role: profile.role } : null,
-    isAdmin: profile?.role === "admin",
-    isAnalyst: hasRole(profile?.role, "analyst"),
+    // HIDDEN (restore later): open access forces admin/analyst UI; remove OPEN_CONSOLE_ACCESS terms to restore.
+    isAdmin: OPEN_CONSOLE_ACCESS || profile?.role === "admin",
+    isAnalyst: OPEN_CONSOLE_ACCESS || hasRole(profile?.role, "analyst"),
   };
 }
